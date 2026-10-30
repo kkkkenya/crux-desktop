@@ -125,6 +125,8 @@ src/
     tools/plan.ts               plan_init (author-once mermaid plan, deterministic parser)
     tools/probe.ts              probe_done (probe→teach handoff seam)
     tools/jobs.ts               research / demo / visual tool surfaces
+    tools/show-image.ts         show_image (a learner image shown as-is, teacher only)
+    tools/learner-image.ts      learner images bounded for the record (show_image, visual's image)
     tools/web.ts                web_search (Google CSE) + web_fetch (researcher only)
     subagents/                  researcher · demo-builder · visual-maker
                                 · pdf-reader,
