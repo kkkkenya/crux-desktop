@@ -4,7 +4,8 @@ import type { PiEngine } from "../models.ts";
 import { processImage, type SupportedImageMimeType } from "../image-processing/index.ts";
 import { withBgLlmSlot } from "./bg-llm-semaphore.ts";
 import { getHeadless, type HeadlessApi } from "./headless.ts";
-import { pdfInfo, pdfPageTexts, type PdfPageInfo } from "./pdf-ops.ts";
+import type { PdfPage } from "./pdf-markdown.ts";
+import { pdfInfo, type PdfPageInfo } from "./pdf-ops.ts";
 import { streamOnce } from "./pdf-reader.ts";
 
 /**
@@ -12,11 +13,13 @@ import { streamOnce } from "./pdf-reader.ts";
  * Markdown text BEFORE the notes front door's extract → audit → merge — the
  * pipeline stays text-in; this is the only stage that sees pixels.
  *
- * PDFs are HYBRID (owner, 2026-10-29): pdfjs text for every page, and a
- * vision call only for the pages that text can't carry — math- or
- * image-heavy (the pdf-reader's flagged-page signals) or text-poor (scans,
- * vector handwriting exports). One call per page, each under the shared
- * background-LLM semaphore, so a long scan never floods the provider.
+ * PDFs are HYBRID (owner, 2026-10-29): the shared converter's Markdown
+ * (pdf-markdown.ts, PR #324) for every text page, and a vision call only for
+ * the pages that text can't carry — picture-only or empty (scans, vector
+ * handwriting exports), or text pages that are math- or image-heavy or
+ * text-poor (the pdf-reader's flagged-page signals). One call per page,
+ * each under the shared background-LLM semaphore, so a long scan never
+ * floods the provider.
  * Runs as the pdfReader role (vision slot) — no role of its own.
  *
  * Aborts propagate; any other failed page call fails the transcription
@@ -93,34 +96,46 @@ function seesImages(engine: PiEngine): boolean {
 	return engine.model.input.includes("image");
 }
 
-/** A PDF as Markdown, page by page under `--- Page N ---` headers (the
- *  pdfExtract convention). A model without image input, or a page image
- *  that can't be processed, keeps that page's pdfjs text. */
-export async function transcribePdf(pdfPath: string, opts: TranscribeOptions): Promise<string> {
+/** The pages the text layer can't carry, ascending: every picture-only or
+ *  empty page, plus the text pages the signals flag. Empty = no vision. */
+export async function visionPages(pdfPath: string, pages: readonly PdfPage[]): Promise<number[]> {
+	const signals = new Map((await pdfInfo(pdfPath)).pages.map((page) => [page.page, page]));
+	return pages
+		.filter((page) => {
+			const info = signals.get(page.number);
+			return page.kind !== "text" || (info !== undefined && needsVision(info));
+		})
+		.map((page) => page.number);
+}
+
+/** A PDF as Markdown under `--- Page N ---` markers (joinPages' format):
+ *  each `needed` page transcribed from its render (its converted text rides
+ *  along as a hint), every other text page as converted. A model without
+ *  image input, or a page image that can't be processed, keeps the page's
+ *  converted text — picture-only pages then have none and drop out. */
+export async function transcribePdf(pdfPath: string, pages: readonly PdfPage[], needed: readonly number[], opts: TranscribeOptions): Promise<string> {
 	const headless = opts.headless ?? getHeadless();
-	const info = await pdfInfo(pdfPath);
-	const texts = await pdfPageTexts(pdfPath);
 	opts.signal?.throwIfAborted();
-	const vision = seesImages(opts.engine);
+	const want = new Set(seesImages(opts.engine) ? needed : []);
 	// The first failed page stops its siblings: no spend after a doomed run.
 	const siblings = new AbortController();
 	const signal = opts.signal ? AbortSignal.any([opts.signal, siblings.signal]) : siblings.signal;
 	const pageOpts = { ...opts, signal };
-	const pages = await Promise.all(info.pages.map(async (page): Promise<string> => {
-		const text = texts[page.page - 1] ?? "";
-		if (!vision || !needsVision(page)) return text;
+	const bodies = await Promise.all(pages.map(async (page): Promise<string> => {
+		const text = page.kind === "text" ? page.markdown : "";
+		if (!want.has(page.number)) return text;
 		try {
 			// Render inside the permit: at most three page images in memory.
 			return await withBgLlmSlot(signal, async () => {
 				signal.throwIfAborted();
-				const [rendered] = await headless.renderPdfPages(pdfPath, [page.page], { dpi: RENDER_DPI });
+				const [rendered] = await headless.renderPdfPages(pdfPath, [page.number], { dpi: RENDER_DPI });
 				if (!rendered) return text;
 				const image = await processImage(rendered.png, "image/png", { resizeOptions: opts.engine.model.inputLimits?.images?.resize });
 				signal.throwIfAborted();
 				if (!image.ok) return text;
 				const context = text.trim()
-					? `Page ${page.page} of ${info.page_count}. Extracted text (may be garbled or incomplete):\n${text}`
-					: `Page ${page.page} of ${info.page_count}. No text could be extracted from this page.`;
+					? `Page ${page.number} of ${pages.length}. Extracted text (may be garbled or incomplete):\n${text}`
+					: `Page ${page.number} of ${pages.length}. No text could be extracted from this page.`;
 				return transcribeOne(image, context, pageOpts);
 			});
 		} catch (err) {
@@ -128,7 +143,9 @@ export async function transcribePdf(pdfPath: string, opts: TranscribeOptions): P
 			throw err;
 		}
 	}));
-	return pages.map((body, i) => `--- Page ${i + 1} ---\n${body}`).join("\n");
+	return pages
+		.flatMap((page, i) => (bodies[i]!.trim() ? [`--- Page ${page.number} ---\n\n${bodies[i]}`] : []))
+		.join("\n\n");
 }
 
 /** An image file as Markdown — one vision call. */

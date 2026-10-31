@@ -8,6 +8,9 @@ import { createFauxCore, fauxAssistantMessage, fauxToolCall } from "@earendil-wo
 import { stores } from "../src/server/stores.ts";
 import type { GraphStore } from "../src/core/ports.ts";
 import type { GraphNode, GraphChain, NotesSource, SessionCheckpoint } from "../src/core/contracts.ts";
+import { tinyPdf } from "./helpers/tiny-pdf.ts";
+import { joinPages } from "../src/agent/subagents/pdf-markdown.ts";
+import { MAX_IMPORT_BODY_BYTES, MAX_IMPORT_BYTES } from "../lib/notes-import-limits.ts";
 
 const original = extraction.importNotes;
 after(() => { extraction.importNotes = original; });
@@ -66,6 +69,7 @@ it("real route plus in-memory ledgers and faux stages reprocess identical import
 		appendCoverage: () => {}, readCoverage: () => [],
 		upsertSource: (source) => { sources.set(source.id, { ...source, extractions: sources.get(source.id)?.extractions ?? [] }); },
 		readSources: () => [...sources.values()],
+		deleteSources: (ids) => [...ids].reduce((count, id) => count + Number(sources.delete(id)), 0),
 		appendSourceUsage: (id, usage) => { sources.get(id)!.extractions!.push(usage); },
 		readPositions: () => ({}), writePositions: () => {}, rewriteLedgers: () => {},
 	};
@@ -102,29 +106,165 @@ it("route returns 400 without files", async () => {
 	assert.deepEqual(await response.json(), { results: [], error: "no files" });
 });
 
-it("route hands PDFs and images over as bytes and refuses oversized ones per file (issue #285)", async () => {
-	const seen: Parameters<typeof extraction.importNotes>[0][] = [];
-	extraction.importNotes = async (input) => { seen.push(input); return { nodes: 0, chains: 0 }; };
+function upload(files: { name: string; bytes: Uint8Array<ArrayBuffer> | string }[]) {
+	const form = new FormData();
+	for (const { name, bytes } of files) form.append("files", new File([bytes], name));
+	return new Request("http://localhost/api/graph/import", { method: "POST", body: form });
+}
+
+type ImportInput = Parameters<typeof extraction.importNotes>[0];
+/** What the pipeline would extract from a received input, without running it. */
+const asText = (input: ImportInput) => "text" in input ? input.text : "pdf" in input ? joinPages(input.pages) : `[image ${input.mimeType}]`;
+
+it("a PDF reaches the pipeline with its converted pages and its bytes (the vision pass renders from them)", async () => {
+	const received: ImportInput[] = [];
+	extraction.importNotes = async (input) => { received.push(input); return { nodes: 1, chains: 0 }; };
+	const pdf = tinyPdf([{ image: true }, { runs: [{ text: "Week 3", x: 72, y: 700, size: 20 }, { text: "Plants make sugar.", x: 72, y: 660 }] }]);
+	const response = await POST(upload([{ name: "lecture.pdf", bytes: pdf }, { name: "notes.md", bytes: "# plain notes" }]));
+	const { results } = await response.json();
+	const lecture = received.find((input) => input.filePath === "lecture.pdf")!;
+	assert.ok("pdf" in lecture && lecture.pdf.byteLength === pdf.byteLength);
+	assert.deepEqual(lecture.pages.map((page) => page.kind), ["image-only", "text"], "the picture-only page is kept for the vision pass");
+	assert.equal(asText(lecture), "--- Page 2 ---\n\n# Week 3\n\nPlants make sugar.");
+	assert.equal(asText(received.find((input) => input.filePath === "notes.md")!), "# plain notes");
+	const byName = (name: string) => results.find((r: { filePath: string }) => r.filePath === name);
+	assert.equal(byName("lecture.pdf").outcome, "completed");
+	assert.equal(byName("lecture.pdf").notice, "Scanned pages may have errors.");
+	assert.equal(byName("notes.md").notice, undefined, "text files carry no notice");
+});
+
+it("PDFs and images are known by their bytes, not their names", async () => {
+	const received: ImportInput[] = [];
+	extraction.importNotes = async (input) => { received.push(input); return { nodes: 0, chains: 0 }; };
+	const pdf = tinyPdf([{ runs: [{ text: "Inside a misnamed file", x: 72, y: 700 }] }]);
 	const png = new Uint8Array([
 		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
 		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
 	]);
-	const huge = new Uint8Array(25 * 1024 * 1024 + 1);
-	huge.set(new TextEncoder().encode("%PDF-"));
-	const form = new FormData();
-	form.append("files", new File([new TextEncoder().encode("%PDF-1.7\n")], "lecture.pdf"));
-	form.append("files", new File([png], "board.png"));
-	form.append("files", new File(["# plain notes"], "notes.md"));
-	form.append("files", new File([huge], "huge.pdf"));
-	const response = await POST(new Request("http://localhost/api/graph/import", { method: "POST", body: form }));
+	await POST(upload([{ name: "renamed.txt", bytes: pdf }, { name: "fake.pdf", bytes: "just text" }, { name: "board.txt", bytes: png }]));
+	assert.deepEqual(received.map(asText).sort(), ["--- Page 1 ---\n\nInside a misnamed file", "[image image/png]", "just text"]);
+	const board = received.find((input) => input.filePath === "board.txt")!;
+	assert.ok("image" in board && board.image.byteLength === png.byteLength);
+});
+
+it("unreadable and over-long PDFs are refused before any model call; picture-only PDFs go to the vision pass (issue #285)", async () => {
+	const received: ImportInput[] = [];
+	extraction.importNotes = async (input) => { received.push(input); return { nodes: 0, chains: 0 }; };
+	const response = await POST(upload([
+		{ name: "scan.pdf", bytes: tinyPdf([{ image: true }, {}]) },
+		{ name: "broken.pdf", bytes: "%PDF-1.4\nnot really a pdf" },
+		{ name: "huge.pdf", bytes: tinyPdf(Array.from({ length: 1001 }, () => ({}))) },
+	]));
 	const { results } = await response.json();
-	const byName = (name: string) => results.find((r: { filePath: string }) => r.filePath === name);
-	assert.ok(["lecture.pdf", "board.png", "notes.md"].every((name) => byName(name).ok));
-	assert.deepEqual(byName("huge.pdf"), { filePath: "huge.pdf", requestIndex: 3, outcome: "failed", ok: false, error: "File too large (over 25 MB)" });
-	const input = (name: string) => seen.find((i) => i.filePath === name)!;
-	assert.ok("pdf" in input("lecture.pdf"));
-	const board = input("board.png");
-	assert.ok("image" in board && board.mimeType === "image/png");
-	assert.deepEqual(input("notes.md"), { filePath: "notes.md", text: "# plain notes" });
-	assert.equal(seen.length, 3, "the oversized file never reaches the pipeline");
+	assert.deepEqual(received.map((input) => input.filePath), ["scan.pdf"]);
+	const scan = received[0]!;
+	assert.ok("pdf" in scan);
+	assert.deepEqual(scan.pages.map((page) => page.kind), ["image-only", "empty"]);
+	const resultOf = (name: string) => results.find((r: { filePath: string }) => r.filePath === name);
+	assert.equal(resultOf("scan.pdf").outcome, "completed");
+	for (const [name, error] of [["broken.pdf", "Could not open this PDF."], ["huge.pdf", "Too long. Max 1,000 pages."]] as const) {
+		assert.equal(resultOf(name).ok, false);
+		assert.equal(resultOf(name).outcome, "failed");
+		assert.equal(resultOf(name).error, error);
+	}
+});
+
+it("every converted PDF carries the scanner caveat, mixed or text-only", async () => {
+	extraction.importNotes = async () => ({ nodes: 0, chains: 0 });
+	const text = { runs: [{ text: "Text page", x: 72, y: 600 }] };
+	const response = await POST(upload([
+		{ name: "mixed.pdf", bytes: tinyPdf([{ image: true }, {}, text, { image: true }]) },
+		{ name: "text.pdf", bytes: tinyPdf([text]) },
+	]));
+	const { results } = await response.json();
+	for (const name of ["mixed.pdf", "text.pdf"]) {
+		assert.equal(results.find((r: { filePath: string }) => r.filePath === name).notice, "Scanned pages may have errors.");
+	}
+	assert.ok(results.every((r: { ok: boolean }) => r.ok));
+});
+
+for (const image of ["mask", "inline"] as const) it(`textless ${image} image pages reach the pipeline as image-only pages`, async () => {
+	const received: ImportInput[] = [];
+	extraction.importNotes = async (input) => { received.push(input); return { nodes: 0, chains: 0 }; };
+	const response = await POST(upload([{ name: "mixed.pdf", bytes: tinyPdf([
+		{ runs: [{ text: "Readable text", x: 72, y: 600 }] }, { image },
+	]) }]));
+	const { results } = await response.json();
+	assert.equal(results[0].outcome, "completed");
+	const [input] = received;
+	assert.ok(input && "pdf" in input);
+	assert.deepEqual(input.pages.map((page) => page.kind), ["text", "image-only"]);
+});
+
+for (const split of [false, true]) it(`server refuses actual file bytes over 25 MiB (${split ? "aggregate" : "single file"}) before the pipeline`, async () => {
+	let calls = 0;
+	extraction.importNotes = async () => { calls++; return { nodes: 0, chains: 0 }; };
+	const files = split
+		? [{ name: "a.txt", bytes: new Uint8Array(MAX_IMPORT_BYTES / 2 + 1) }, { name: "b.txt", bytes: new Uint8Array(MAX_IMPORT_BYTES / 2) }]
+		: [{ name: "a.txt", bytes: new Uint8Array(MAX_IMPORT_BYTES + 1) }];
+	const req = upload(files);
+	req.headers.set("content-length", "1"); // not a trustworthy bound
+	const response = await POST(req);
+	assert.equal(response.status, 413);
+	assert.deepEqual(await response.json(), { results: [], error: "Too big. Max 25 MB." });
+	assert.equal(calls, 0);
+});
+
+it("server accepts exactly 25 MiB of files with multipart overhead below 26 MiB", async () => {
+	let received = 0;
+	extraction.importNotes = async (input) => { received = "text" in input ? input.text.length : -1; return { nodes: 0, chains: 0 }; };
+	const response = await POST(upload([{ name: "boundary.txt", bytes: new Uint8Array(MAX_IMPORT_BYTES) }]));
+	assert.equal(response.status, 200);
+	assert.equal(received, MAX_IMPORT_BYTES);
+	assert.equal((await response.json()).results[0].outcome, "completed");
+});
+
+for (const declared of [undefined, "1"]) it(`server bounds streamed body bytes with ${declared ? "a misleading" : "no"} Content-Length and cancels oversize streams`, async () => {
+	let calls = 0;
+	let chunks = 0;
+	let cancelled = false;
+	extraction.importNotes = async () => { calls++; return { nodes: 0, chains: 0 }; };
+	const body = new ReadableStream<Uint8Array>({
+		pull(controller) { chunks++; controller.enqueue(new Uint8Array(1024 * 1024)); },
+		cancel() { cancelled = true; },
+	}, { highWaterMark: 0 });
+	const req = new Request("http://localhost/api/graph/import", { method: "POST", body, duplex: "half",
+		headers: { "content-type": "multipart/form-data; boundary=test", ...(declared ? { "content-length": declared } : {}) },
+	} as RequestInit);
+	const response = await POST(req);
+	assert.equal(response.status, 413);
+	assert.deepEqual(await response.json(), { results: [], error: "Import request is too large. Select fewer files." });
+	assert.equal(chunks, MAX_IMPORT_BODY_BYTES / (1024 * 1024) + 1);
+	assert.equal(cancelled, true);
+	assert.equal(calls, 0);
+});
+
+it("oversized declared body is refused without reading it", async () => {
+	let reads = 0;
+	let cancelled = false;
+	const req = new Request("http://localhost/api/graph/import", { method: "POST", duplex: "half",
+		headers: { "content-length": String(MAX_IMPORT_BODY_BYTES + 1) },
+		body: new ReadableStream({ pull() { reads++; }, cancel() { cancelled = true; } }, { highWaterMark: 0 }),
+	} as RequestInit);
+	const response = await POST(req);
+	assert.equal(response.status, 413);
+	assert.equal(reads, 0);
+	assert.equal(cancelled, true);
+});
+
+it("malformed or proxy-truncated multipart is refused before any file enters the pipeline", async () => {
+	let calls = 0;
+	extraction.importNotes = async () => { calls++; return { nodes: 0, chains: 0 }; };
+	const complete = upload([{ name: "first.md", bytes: "valid first file" }, { name: "second.md", bytes: "second file" }]);
+	const bytes = new Uint8Array(await complete.arrayBuffer());
+	for (const req of [
+		new Request(complete.url, { method: "POST", body: bytes.slice(0, -20), headers: complete.headers }),
+		new Request(complete.url, { method: "POST", body: "not multipart" }),
+		new Request(complete.url, { method: "POST" }),
+	]) {
+		const response = await POST(req);
+		assert.equal(response.status, 400);
+		assert.deepEqual(await response.json(), { results: [], error: "Could not read the upload. It may be incomplete; please select the files again." });
+	}
+	assert.equal(calls, 0);
 });

@@ -9,9 +9,18 @@ import { describe, it } from "node:test";
 import { createFauxCore, fauxAssistantMessage, type FauxResponseStep } from "@earendil-works/pi-ai";
 import type { PiEngine } from "../src/agent/models.ts";
 import type { HeadlessApi } from "../src/agent/subagents/headless.ts";
-import { needsVision, transcribeImage, transcribePdf } from "../src/agent/subagents/notes-transcriber.ts";
+import { needsVision, transcribeImage, transcribePdf, visionPages } from "../src/agent/subagents/notes-transcriber.ts";
+import type { PdfPage } from "../src/agent/subagents/pdf-markdown.ts";
+import { convertPdf } from "../src/agent/subagents/pdf-ops.ts";
+import { readFileSync } from "node:fs";
 
 const FIXTURE = path.join(import.meta.dirname, "fixtures", "sample-3page.pdf");
+/** The fixture as the route hands it over: the shared converter's pages. */
+async function fixturePages(): Promise<PdfPage[]> {
+	const converted = await convertPdf(new Uint8Array(readFileSync(FIXTURE)), 1000);
+	assert.equal(converted.kind, "converted");
+	return converted.kind === "converted" ? converted.pages : [];
+}
 
 const PNG_1PX = Buffer.from([
 	0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
@@ -62,35 +71,46 @@ describe("notes transcriber", () => {
 	it("a PDF transcribes its flagged pages in page order, billing each call", async () => {
 		const headless = fakeHeadless();
 		const usage: string[] = [];
-		const text = await transcribePdf(FIXTURE, {
+		const pages = await fixturePages();
+		// Every fixture page is text-poor (< 200 chars), so all three need vision.
+		assert.deepEqual(await visionPages(FIXTURE, pages), [1, 2, 3]);
+		const text = await transcribePdf(FIXTURE, pages, [1, 2, 3], {
 			engine: fauxEngine([pageEcho, pageEcho, pageEcho]),
 			headless,
 			onUsage: (u, model) => { assert.ok(u.input > 0); usage.push(model); },
 		});
 		// Every fixture page is text-poor (< 200 chars), so all three render.
 		assert.deepEqual([...headless.rendered].sort(), [1, 2, 3]);
-		assert.equal(text, "--- Page 1 ---\nTranscribed page 1\n--- Page 2 ---\nTranscribed page 2\n--- Page 3 ---\nTranscribed page 3");
+		assert.equal(text, "--- Page 1 ---\n\nTranscribed page 1\n\n--- Page 2 ---\n\nTranscribed page 2\n\n--- Page 3 ---\n\nTranscribed page 3");
 		assert.deepEqual(usage, ["faux:faux-1", "faux:faux-1", "faux:faux-1"]);
 	});
 
-	it("a model without image input keeps the pdfjs text and makes no calls", async () => {
+	it("a model without image input keeps the converted text and makes no calls", async () => {
 		const headless = fakeHeadless();
 		let calls = 0;
-		const text = await transcribePdf(FIXTURE, {
+		const text = await transcribePdf(FIXTURE, await fixturePages(), [1, 2, 3], {
 			engine: fauxEngine([() => { calls++; return fauxAssistantMessage("unused"); }], ["text"]),
 			headless,
 		});
 		assert.equal(calls, 0);
 		assert.deepEqual(headless.rendered, []);
-		assert.match(text, /^--- Page 1 ---\n\S/);
-		assert.match(text, /--- Page 3 ---\n\S/);
+		assert.match(text, /^--- Page 1 ---\n\nCalculus page/);
+		assert.match(text, /--- Page 3 ---\n\nChemistry page/);
+	});
+
+	it("only the needed pages are rendered; the rest keep their converted Markdown", async () => {
+		const headless = fakeHeadless();
+		const text = await transcribePdf(FIXTURE, await fixturePages(), [2], { engine: fauxEngine([pageEcho]), headless });
+		assert.deepEqual(headless.rendered, [2]);
+		assert.match(text, /^--- Page 1 ---\n\nCalculus page/);
+		assert.match(text, /--- Page 2 ---\n\nTranscribed page 2\n\n--- Page 3 ---\n\nChemistry page/);
 	});
 
 	it("an already-aborted signal stops before any page call", async () => {
 		const controller = new AbortController();
 		controller.abort();
 		await assert.rejects(
-			transcribePdf(FIXTURE, { engine: fauxEngine([pageEcho]), headless: fakeHeadless(), signal: controller.signal }),
+			transcribePdf(FIXTURE, await fixturePages(), [1, 2, 3], { engine: fauxEngine([pageEcho]), headless: fakeHeadless(), signal: controller.signal }),
 			(err: Error) => err.name === "AbortError",
 		);
 	});
@@ -98,7 +118,7 @@ describe("notes transcriber", () => {
 	it("a failed page call fails the whole transcription", async () => {
 		const failing: FauxResponseStep = () => { throw new Error("provider exploded"); };
 		await assert.rejects(
-			transcribePdf(FIXTURE, { engine: fauxEngine([failing, failing, failing]), headless: fakeHeadless() }),
+			transcribePdf(FIXTURE, await fixturePages(), [1, 2, 3], { engine: fauxEngine([failing, failing, failing]), headless: fakeHeadless() }),
 		);
 	});
 

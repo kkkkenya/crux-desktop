@@ -7,10 +7,12 @@
  * source record (the file's provenance + the run's usage), and runs
  * extractor → auditor → merger over the raw text.
  *
- * PDFs and images (issue #285) are sniffed by magic bytes and handed over
- * as bytes — the pipeline transcribes them before extraction; anything
- * else is still decoded as text. They are capped at 25 MB (the
- * researcher's web-PDF cap); text files stay uncapped.
+ * A PDF (spotted by its %PDF- header, not its name) is converted to
+ * Markdown first; an unreadable or over-long PDF is refused before any
+ * model call or source record. The pipeline's vision pass (issue #285)
+ * then reads the pages text can't carry — picture-only, math-heavy, or
+ * text-poor — so scans are transcribed rather than skipped. An image
+ * (also sniffed by content) is transcribed whole.
  *
  * Small concurrency cap: the model calls are the slow part, and a burst of
  * 25 simultaneous runs would trip provider rate limits — a 3-wide worker
@@ -18,8 +20,10 @@
  * healthy. The dock's chips + graph refetch track progress live through
  * /api/graph/status, as with session runs.
  */
-import { extraction, NotesImportError, notesImportInput } from "@/src/server";
+import { convertPdf, detectSupportedImageMimeType, extraction, NotesImportError, sourceDirectory } from "@/src/server";
+import { MAX_IMPORT_BODY_BYTES, MAX_IMPORT_BYTES, validNotesPath } from "@/lib/notes-import-limits.ts";
 import {
+	emit,
 	ModelsNotConfiguredError,
 	PROVIDER_KEY_MISSING_CODE,
 	ProviderKeyMissingError,
@@ -43,61 +47,131 @@ interface ImportResult {
 	/** The key-refusal specifics (provider_key_missing only). */
 	provider?: string;
 	slots?: string[];
+	/** Shown beside a completed import (every PDF: scanner text may be wrong). */
+	notice?: string;
+}
+
+const MAX_PDF_PAGES = 1000;
+const PDF_MAGIC = [0x25, 0x50, 0x44, 0x46, 0x2d]; // "%PDF-"
+
+type NotesImportInput = Parameters<typeof extraction.importNotes>[0];
+type NotesFile = { kind: "notes"; input: NotesImportInput; notice?: string } | { kind: "refused"; error: string };
+
+/** A PDF keeps its converted pages AND its bytes (the vision pass renders
+ * the pages text can't carry); an image goes to the vision pass whole; any
+ * other file is read as text, as before. */
+async function readNotesFile(file: File, filePath: string): Promise<NotesFile> {
+	const bytes = new Uint8Array(await file.arrayBuffer());
+	const mimeType = detectSupportedImageMimeType(bytes);
+	if (mimeType) return { kind: "notes", input: { filePath, image: bytes, mimeType } };
+	if (!PDF_MAGIC.every((byte, i) => bytes[i] === byte)) return { kind: "notes", input: { filePath, text: new TextDecoder().decode(bytes) } };
+	// pdfjs takes over (detaches) the buffer it reads; the vision pass needs
+	// these bytes intact, so the converter gets a copy.
+	const pdf = await convertPdf(bytes.slice(), MAX_PDF_PAGES);
+	switch (pdf.kind) {
+		case "unreadable":
+			return { kind: "refused", error: "Could not open this PDF." };
+		case "too-long":
+			return { kind: "refused", error: "Too long. Max 1,000 pages." };
+		case "converted":
+			return { kind: "notes", input: { filePath, pdf: bytes, pages: pdf.pages }, notice: "Scanned pages may have errors." };
+	}
+}
+
+class ImportBodyLimitError extends Error {}
+
+/** Bound actual body bytes before multipart parsing, including requests without
+ * a trustworthy Content-Length. Next's proxy may truncate first; parsing that
+ * incomplete body is a separate, handled refusal, never a partial import. */
+async function readImportForm(request: Request): Promise<FormData> {
+	if (Number(request.headers.get("content-length")) > MAX_IMPORT_BODY_BYTES) {
+		void request.body?.cancel().catch(() => undefined);
+		throw new ImportBodyLimitError();
+	}
+	const reader = request.body?.getReader();
+	if (!reader) throw new SyntaxError("Missing import body");
+	const chunks: Uint8Array[] = [];
+	let bytes = 0;
+	try {
+		for (;;) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			bytes += value.byteLength;
+			if (bytes > MAX_IMPORT_BODY_BYTES) throw new ImportBodyLimitError();
+			chunks.push(value);
+		}
+		const body = new Uint8Array(bytes);
+		let offset = 0;
+		for (const chunk of chunks) {
+			body.set(chunk, offset);
+			offset += chunk.byteLength;
+		}
+		return await new Response(body, { headers: { "Content-Type": request.headers.get("content-type") ?? "" } }).formData();
+	} finally {
+		// Do not wait for a tee's other consumer to finish before refusing an upload.
+		void reader.cancel().catch(() => undefined);
+		reader.releaseLock();
+	}
 }
 
 export async function POST(request: Request) {
-	const form = await request.formData();
+	let form: FormData;
+	try {
+		form = await readImportForm(request);
+	} catch (err) {
+		const oversized = err instanceof ImportBodyLimitError;
+		return Response.json({ results: [] as ImportResult[], error: oversized
+			? "Import request is too large. Select fewer files."
+			: "Could not read the upload. It may be incomplete; please select the files again." }, { status: oversized ? 413 : 400 });
+	}
 	const files = form.getAll("files").filter((f): f is File => f instanceof File);
+	if (files.reduce((total, file) => total + file.size, 0) > MAX_IMPORT_BYTES) {
+		return Response.json({ results: [] as ImportResult[], error: "Too big. Max 25 MB." }, { status: 413 });
+	}
 	if (files.length === 0) {
 		return Response.json({ results: [] as ImportResult[], error: "no files" }, { status: 400 });
 	}
 
+	// PR198: folder-relative identity, matched to either browser filename form.
+	// Validate every path before conversions, metadata writes, or model calls.
+	const suppliedPaths = form.getAll("paths");
+	if (suppliedPaths.length > 0 && (suppliedPaths.length !== files.length || suppliedPaths.some((p) => typeof p !== "string"))) {
+		return Response.json({ results: [], error: "Invalid import paths" }, { status: 400 });
+	}
+	const paths = suppliedPaths.length > 0 ? suppliedPaths as string[] : files.map((f) => f.name);
+	if (files.some((file, i) => !validNotesPath(paths[i]!, file.name))) {
+		return Response.json({ results: [], error: "Import contains an unsafe or mismatched relative path" }, { status: 400 });
+	}
 	const results: ImportResult[] = [];
-	const queue = files.map((file, requestIndex) => ({ file, requestIndex }));
+	const queue = files.map((file, requestIndex) => ({ file, requestIndex, filePath: paths[requestIndex]! }));
 	const workers = Array.from({ length: Math.min(3, files.length) }, async () => {
 		for (;;) {
 			const next = queue.shift();
 			if (!next) return;
-			const { file, requestIndex } = next;
+			const { file, requestIndex, filePath } = next;
 			try {
-				const input = notesImportInput(file.name, new Uint8Array(await file.arrayBuffer()));
-				if (typeof input === "string") {
-					results.push({ filePath: file.name, requestIndex, outcome: "failed", ok: false, error: input });
+				const notes = await readNotesFile(file, filePath);
+				if (notes.kind === "refused") {
+					results.push({ filePath, requestIndex, outcome: "failed", ok: false, error: notes.error });
 					continue;
 				}
-				const stats = await extraction.importNotes(input);
-				results.push({ filePath: file.name, requestIndex, outcome: "completed", ok: true, stats });
+				sourceDirectory.registerImport(filePath);
+				const stats = await extraction.importNotes(notes.input);
+				results.push({ filePath, requestIndex, outcome: "completed", ok: true, stats, ...(notes.notice ? { notice: notes.notice } : {}) });
 			} catch (err) {
 				if (err instanceof ModelsNotConfiguredError) {
-					results.push({
-						filePath: file.name,
-						ok: false,
-						requestIndex, outcome: "failed",
-						error: err.envelope.error,
-						code: "models_not_configured",
-						missing: err.envelope.missing,
-					});
-					continue;
+					results.push({ filePath, ok: false, requestIndex, outcome: "failed", error: err.envelope.error,
+						code: "models_not_configured", missing: err.envelope.missing });
+				} else if (err instanceof ProviderKeyMissingError) {
+					results.push({ filePath, ok: false, requestIndex, outcome: "failed", error: err.envelope.error,
+						code: PROVIDER_KEY_MISSING_CODE, provider: err.envelope.provider, slots: err.envelope.slots });
+				} else {
+					results.push({ filePath, requestIndex, ok: false,
+						outcome: err instanceof NotesImportError ? err.outcome : "failed",
+						...(err instanceof NotesImportError ? { stats: err.partialStats } : {}),
+						error: err instanceof Error ? err.message : String(err) });
 				}
-				if (err instanceof ProviderKeyMissingError) {
-					results.push({
-						filePath: file.name,
-						ok: false,
-						requestIndex, outcome: "failed",
-						error: err.envelope.error,
-						code: PROVIDER_KEY_MISSING_CODE,
-						provider: err.envelope.provider,
-						slots: err.envelope.slots,
-					});
-					continue;
-				}
-				results.push({
-					filePath: file.name, requestIndex, ok: false,
-					outcome: err instanceof NotesImportError ? err.outcome : "failed",
-					...(err instanceof NotesImportError ? { stats: err.partialStats } : {}),
-					error: err instanceof Error ? err.message : String(err),
-				});
-			}
+			} finally { emit("sources-changed", {}); }
 		}
 	});
 	await Promise.all(workers);
