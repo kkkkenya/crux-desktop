@@ -45,6 +45,7 @@ import {
 	type RoleModelOverride,
 	type UserSettings,
 } from "./settings.ts";
+import { CUSTOM_PROVIDER, customProviderLabel } from "./auth-keys.ts";
 
 /** A configured model slot: the tier's concrete model, with its optional
  *  thinking level. UNSET level is legal — the engine build resolves it
@@ -98,9 +99,19 @@ export interface EffectiveSettings {
 	/** Compaction (owner round 14): resolved concrete — absent record
 	 *  section resolves to the factory 150k. */
 	compaction: Required<CompactionSettings>;
-	/** Custom endpoint, resolved concrete: baseUrl defaults "", models and
-	 *  user pins default to empty. */
-	customProvider: { baseUrl: string; models: CustomModel[]; overrides: Record<string, CustomModelOverride>; manualModels: string[] };
+	/** Custom endpoints, resolved concrete: every stored endpoint with a
+	 *  stable id/label; absent sections resolve to an empty list. */
+	customProviders: ResolvedCustomProvider[];
+}
+
+/** One custom endpoint's resolved, client-safe view. */
+export interface ResolvedCustomProvider {
+	id: string;
+	label: string;
+	baseUrl: string;
+	models: CustomModel[];
+	overrides: Record<string, CustomModelOverride>;
+	manualModels: string[];
 }
 
 /** The conversation pair's chain (BYOK, owner 2026-09-22): the chat's own
@@ -232,12 +243,14 @@ export function resolveSettings(record: UserSettings | null): EffectiveSettings 
 			thresholdTokens: record?.compaction?.thresholdTokens ?? FACTORY_SETTINGS.compaction.thresholdTokens,
 			contextWindows: record?.compaction?.contextWindows ?? FACTORY_SETTINGS.compaction.contextWindows,
 		},
-		customProvider: {
-			baseUrl: record?.customProvider?.baseUrl ?? "",
-			models: record?.customProvider?.models ?? [],
-			overrides: record?.customProvider?.overrides ?? {},
-			manualModels: record?.customProvider?.manualModels ?? [],
-		},
+		customProviders: (record?.customProviders ?? []).map((cp) => ({
+			id: cp.id ?? CUSTOM_PROVIDER.id,
+			label: customProviderLabel(cp),
+			baseUrl: cp.baseUrl ?? "",
+			models: cp.models ?? [],
+			overrides: cp.overrides ?? {},
+			manualModels: cp.manualModels ?? [],
+		})),
 	};
 }
 

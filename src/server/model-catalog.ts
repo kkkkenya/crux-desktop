@@ -48,7 +48,7 @@ import type {
 	SlotPins,
 } from "../core/contracts/models.ts";
 import type { EffectiveModelSpec, EffectiveSlot } from "../core/settings-resolution.ts";
-import { AUTH_PROVIDER_KEYS, CUSTOM_PROVIDER } from "../core/auth-keys.ts";
+import { AUTH_PROVIDER_KEYS, CUSTOM_PROVIDER, isCustomProviderId } from "../core/auth-keys.ts";
 import { claudeCodeAvailable } from "./claude-code-config.ts";
 import { CLAUDE_CODE_PROVIDER } from "../agent/claude-code/constants.ts";
 import {
@@ -156,11 +156,11 @@ export function catalogProviders(): CatalogProvider[] {
 		{ id: "chatgpt", envVar: "", keyPresent: chatGPTConnected() },
 		{ id: CLAUDE_CODE_PROVIDER, envVar: "", keyPresent: claudeCodeAvailable() },
 		...NATIVE_SUBSCRIPTIONS.map((p) => ({ id: p.logicalId, envVar: "", keyPresent: nativeSubscriptionConnected(p.providerId) })),
-		// The custom endpoint: a row only when usable (base URL set). keyPresent
+		// Custom endpoints: a row only when usable (base URL set). keyPresent
 		// reflects usability, not key presence (keyless local servers are allowed).
-		...(customProviderUsable(effectiveSettings().customProvider)
-			? [{ id: CUSTOM_PROVIDER.id, envVar: CUSTOM_PROVIDER.envVar, keyPresent: customProviderAvailable() }]
-			: []),
+		...effectiveSettings().customProviders
+			.filter(customProviderUsable)
+			.map((cp) => ({ id: cp.id ?? CUSTOM_PROVIDER.id, envVar: cp.id === CUSTOM_PROVIDER.id || !cp.id ? CUSTOM_PROVIDER.envVar : "", keyPresent: customProviderAvailable(cp.id ?? CUSTOM_PROVIDER.id) })),
 	]).sort((a, b) => a.id.localeCompare(b.id));
 }
 
@@ -189,15 +189,16 @@ export function resolveModelContext(model: Model<Api>, windows: Readonly<Record<
 }
 
 /** Project one catalog model to the client DTO. */
-export function toModelDto(model: Model<Api>, windows: Readonly<Record<string, number>> = {}): ModelDto {
+export function toModelDto(model: Model<Api>, windows: Readonly<Record<string, number>> = {}, providerName?: string): ModelDto {
 	return {
 		id: model.id,
 		name: model.name,
 		provider: model.provider,
+		...(providerName ? { providerName } : {}),
 		reasoning: model.reasoning,
 		input: [...model.input],
 		supportedLevels: getSupportedThinkingLevels(model),
-		cost: model.provider === CLAUDE_CODE_PROVIDER || model.provider === CUSTOM_PROVIDER.id ? null : {
+		cost: model.provider === CLAUDE_CODE_PROVIDER || isCustomProviderId(model.provider) ? null : {
 			input: model.cost.input,
 			output: model.cost.output,
 			cacheRead: model.cost.cacheRead,
@@ -237,13 +238,11 @@ export function catalogContextLimits(): Map<string, number> {
 export function modelCatalog(): ModelCatalogResponse {
 	const keyed = keyedProviderIds();
 	const windows = effectiveSettings().compaction.contextWindows;
-	const models = piModels()
-		.getProviders()
-		.filter((p) => keyed.has(p.id))
-		.flatMap((p) => piModels().getModels(p.id))
-		.map((model) => toModelDto(model, windows))
+	const providers = piModels().getProviders().filter((p) => keyed.has(p.id));
+	const models = providers
+		.flatMap((p) => piModels().getModels(p.id).map((m) => toModelDto(m, windows, isCustomProviderId(p.id) ? p.name : undefined)))
 		.sort((a, b) => (a.provider === b.provider ? a.id.localeCompare(b.id) : a.provider.localeCompare(b.provider)))
-		.concat([...chatGPTModels(), ...nativeSubscriptionModels()].map((model) => toModelDto(model, windows)));
+		.concat([...chatGPTModels(), ...nativeSubscriptionModels()].map((m) => toModelDto(m, windows)));
 	return {
 		models,
 		defaults: catalogDefaults(),
