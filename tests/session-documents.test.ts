@@ -61,7 +61,7 @@ it("multipart create with an MD fixture: record linkage, staged material, pipeli
 	const calls: Array<{ filePath: string; text: string }> = [];
 	const original = extraction.importNotes;
 	extraction.importNotes = async (input) => {
-		calls.push({ filePath: input.filePath, text: input.text });
+		calls.push({ filePath: input.filePath, text: "text" in input ? input.text : "" });
 		return { nodes: 0, chains: 0 };
 	};
 	try {
@@ -90,7 +90,7 @@ it("a tiny PDF converts through the shared notes-import converter before staging
 	const calls: Array<{ filePath: string; text: string }> = [];
 	const original = extraction.importNotes;
 	extraction.importNotes = async (input) => {
-		calls.push({ filePath: input.filePath, text: input.text });
+		calls.push({ filePath: input.filePath, text: "text" in input ? input.text : "" });
 		return { nodes: 0, chains: 0 };
 	};
 	try {

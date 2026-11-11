@@ -223,7 +223,7 @@ export function Home({
 		} catch {
 			startingRef.current = false;
 			setBusy(false);
-			setStartError(true);
+			setStartError(OPENING_PROMPT_FAILURE);
 		}
 	};
 
