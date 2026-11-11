@@ -51,6 +51,7 @@ const STORAGE_KEY = "lh:sidebar-open";
 import type { ChatGPTControlBridge, NativeSubscriptionControlBridge } from "@/src/core";
 import type { UpdateState } from "@/components/settings/update-settings.tsx";
 import { FilePathDropZone } from "@/components/file-path-drop-zone";
+import { HubEntry, type CruxBridge } from "@/components/crux-hub";
 const SIDEBAR_AUTOCLOSE = 928;
 
 // Module scope, guarded for SSR (the server has no navigator).
@@ -82,6 +83,8 @@ declare global {
 			checkForUpdates?: () => Promise<void>;
 			installUpdate?: () => void;
 			onOpenSettings?: (cb: (section: string) => void) => () => void;
+			/** Crux account and hub files (electron/crux-hub.cjs). */
+			crux?: CruxBridge;
 		};
 	}
 }
@@ -852,6 +855,8 @@ function SessionsSidebar() {
 					    New session — quiet, bottom-pinned, opens the centered
 					    dialog (also mod+, in the keyboard registry). */}
 					<div className="px-3 pb-3 pt-1">
+						{/* Hub files (Crux): the Study Hub's notes and past papers. */}
+						<HubEntry />
 						<Hint label="Settings" action="open-settings" side="right">
 							<button
 								type="button"

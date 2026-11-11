@@ -32,6 +32,7 @@ const { createSubscriptions, loadSubscriptionSDK } = require("./subscriptions.cj
 const { attachSubscriptionChild, subscriptionControl } = require("./subscription-ipc.cjs");
 const { desktopAPIHeaders } = require("./desktop-api.cjs");
 const { openWebSubscriptionBrowser } = require("./web-subscription-browser.cjs");
+const { createCruxHub, cruxControl } = require("./crux-hub.cjs");
 const { randomBytes } = require("node:crypto");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
@@ -731,6 +732,15 @@ async function main() {
 	ipcMain.handle("lh:subscriptions:web-browser", async (event, action) => {
 		if (!devUrl || !trustedAppWindows.has(BrowserWindow.fromWebContents(event.sender)) || !trustedSender(event, new URL(url).origin, BrowserWindow)) throw new Error("Untrusted development request.");
 		await openWebSubscriptionBrowser(action, new URL(url).origin, { openExternal: (target) => shell.openExternal(target) });
+	});
+
+	// Crux account + hub files: available in the packaged app and in the dev shell alike.
+	// It talks to Crux's own server, never to the local one, so it needs no server child.
+	const cruxHub = createCruxHub({ app, BrowserWindow, session, shell, log });
+	ipcMain.handle("lh:crux:control", async (event, command) => {
+		const win = BrowserWindow.fromWebContents(event.sender);
+		if (!trustedAppWindows.has(win) || !trustedSender(event, new URL(url).origin, BrowserWindow)) throw new Error("Untrusted desktop request.");
+		return cruxControl(command, cruxHub, win);
 	});
 
 	ipcMain.handle("lh:attachment:pick", (event, mode) => pickAttachmentPath(event, mode, {

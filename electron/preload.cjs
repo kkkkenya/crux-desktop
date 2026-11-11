@@ -77,6 +77,17 @@ contextBridge.exposeInMainWorld("lh", {
 			return () => ipcRenderer.removeListener("lh:subscriptions:changed", listener);
 		},
 	},
+	// Crux account and hub files (electron/crux-hub.cjs). The Crux session stays in the
+	// main process; the renderer gets names, file lists and local paths only.
+	crux: {
+		status: () => ipcRenderer.invoke("lh:crux:control", { op: "status" }),
+		login: () => ipcRenderer.invoke("lh:crux:control", { op: "login" }),
+		logout: () => ipcRenderer.invoke("lh:crux:control", { op: "logout" }),
+		units: () => ipcRenderer.invoke("lh:crux:control", { op: "units" }),
+		files: (unit) => ipcRenderer.invoke("lh:crux:control", { op: "files", unit }),
+		download: (unit, id, name) => ipcRenderer.invoke("lh:crux:control", { op: "download", unit, id, name }),
+		reveal: (path) => ipcRenderer.invoke("lh:crux:control", { op: "reveal", path }),
+	},
 	expandWindow: () => ipcRenderer.send("lh:expand-window"),
 	onZoom: (cb) => {
 		const listener = (_event, factor) => cb(factor);
