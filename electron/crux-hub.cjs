@@ -104,9 +104,13 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 			} catch { return false; }
 		};
 		// Sign-in stays on Crux and Discord. Anything else opens in the real browser.
-		win.webContents.on("will-navigate", (event, target) => {
-			if (!allowed(target)) { event.preventDefault(); void shell.openExternal(target).catch(() => {}); }
-		});
+		const guard = (event, target) => {
+			if (allowed(target)) return;
+			event.preventDefault();
+			if (/^https:\/\//i.test(String(target))) void shell.openExternal(target).catch(() => {});
+		};
+		win.webContents.on("will-navigate", guard);
+		win.webContents.on("will-redirect", guard);
 		win.webContents.setWindowOpenHandler(({ url }) => {
 			if (/^https:\/\//.test(url)) void shell.openExternal(url).catch(() => {});
 			return { action: "deny" };
@@ -152,7 +156,13 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 		return { mine, all };
 	}
 
-	const localPathFor = (unit, name, id) => path.join(hubRoot(), safeSegment(unit, "unit"), safeSegment(name, `file-${id}`));
+	// The hub id is part of the saved name: two hub files in one unit can share a name.
+	const localPathFor = (unit, name, id) => {
+		const safe = safeSegment(name, "file");
+		const ext = path.extname(safe);
+		return path.join(hubRoot(), safeSegment(unit, "unit"), `${safe.slice(0, safe.length - ext.length)} [${id}]${ext}`);
+	};
+	const inFlight = new Map();
 
 	async function files(unit) {
 		if (typeof unit !== "string" || !unit.trim() || unit.length > 40) throw new CruxError("bad-request", "Pick a unit first.");
@@ -182,6 +192,15 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 		}
 		const target = localPathFor(unit.trim(), name, id);
 		if (fs.existsSync(target)) return { path: target, left: null, cached: true };
+		// A second request for a file that is already downloading waits for the first,
+		// so a double click can never spend two of the day's downloads.
+		if (inFlight.has(target)) return inFlight.get(target);
+		const job = fetchToDisk(target, id).finally(() => inFlight.delete(target));
+		inFlight.set(target, job);
+		return job;
+	}
+
+	async function fetchToDisk(target, id) {
 		const link = await api(`/api/files/${id}/download`);
 		let url;
 		try { url = new URL(link.url); } catch { throw new CruxError("failed", "Crux sent a link that can't be opened."); }
@@ -190,11 +209,24 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 		try { response = await fetch(url, { redirect: "error" }); } catch { throw new CruxError("offline", "The download failed. Check your internet connection and try again."); }
 		if (!response.ok) throw new CruxError("failed", `The file could not be downloaded (${response.status}).`);
 		if (Number(response.headers.get("content-length")) > MAX_FILE_BYTES) throw new CruxError("failed", "That file is too large to download here.");
-		const bytes = Buffer.from(await response.arrayBuffer());
-		if (bytes.length > MAX_FILE_BYTES) throw new CruxError("failed", "That file is too large to download here.");
+		// Read in pieces with a running total, so the size cap holds even without a Content-Length.
+		const chunks = [];
+		let total = 0;
+		const reader = response.body?.getReader();
+		if (!reader) throw new CruxError("failed", "The file could not be downloaded.");
+		for (;;) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			total += value.byteLength;
+			if (total > MAX_FILE_BYTES) {
+				void reader.cancel().catch(() => {});
+				throw new CruxError("failed", "That file is too large to download here.");
+			}
+			chunks.push(value);
+		}
 		fs.mkdirSync(path.dirname(target), { recursive: true });
 		const partial = `${target}.part`;
-		fs.writeFileSync(partial, bytes);
+		fs.writeFileSync(partial, Buffer.concat(chunks));
 		fs.renameSync(partial, target);
 		return { path: target, left: typeof link.left === "number" ? link.left : null, cached: false };
 	}

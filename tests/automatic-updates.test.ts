@@ -10,10 +10,16 @@ import { createContext, runInContext } from "node:vm";
 import { describe, it } from "node:test";
 
 const mainFile = fileURLToPath(new URL("../electron/main.cjs", import.meta.url));
-const mainSource = readFileSync(mainFile, "utf8");
+const shippedSource = readFileSync(mainFile, "utf8");
+// Crux ships with the updater switched off (CRUX_UPDATES = false in electron/main.cjs) until it has
+// its own feed. These tests keep the updater logic honest for that day by running it switched on;
+// the last test in this file pins what actually ships.
+const UPDATES_OFF = "const CRUX_UPDATES = false;";
+assert.ok(shippedSource.includes(UPDATES_OFF), "electron/main.cjs must ship with the updater off");
+const mainSource = shippedSource.replace(UPDATES_OFF, "const CRUX_UPDATES = true;");
 const mainRequire = createRequire(mainFile);
 
-function fixture({ packaged = true, updaterMissing = false } = {}) {
+function fixture({ packaged = true, updaterMissing = false, source = mainSource } = {}) {
 	let settings: string | Error = JSON.stringify({ version: 1, general: { autoUpdate: true } });
 	const settingsReads: string[] = [];
 	const order: string[] = [];
@@ -109,7 +115,7 @@ function fixture({ packaged = true, updaterMissing = false } = {}) {
 		setTimeout() {},
 		fixtureChild: { kill: (signal: string) => order.push(signal) },
 	});
-	runInContext(mainSource, context, { filename: mainFile });
+	runInContext(source, context, { filename: mainFile });
 	const run = (code: string) => runInContext(code, context);
 	return {
 		run, updater, windows, intervals, handles, listeners, settingsReads, order, app,
@@ -340,6 +346,18 @@ describe("LH_UPDATE_FEED override gate", () => {
 	it("leaves the baked feed alone when unset", () => {
 		const f = fixture();
 		f.run("setupAutoUpdater()");
+		assert.deepEqual(f.updater.feeds, []);
+	});
+});
+
+describe("Crux ships with the updater off", () => {
+	it("a packaged build never loads the updater, checks nothing, and reports updates as disabled", async () => {
+		const f = fixture({ packaged: true, source: shippedSource });
+		f.run("setupAutoUpdater()");
+		assert.equal(f.state().status, "disabled");
+		await f.check();
+		await f.check(true);
+		assert.equal(f.updater.checks, 0);
 		assert.deepEqual(f.updater.feeds, []);
 	});
 });

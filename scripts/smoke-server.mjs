@@ -71,7 +71,9 @@ function get(url) {
 			resolve(res.statusCode ?? 0);
 		});
 		req.on("error", () => resolve(0));
-		req.setTimeout(5000, () => {
+		// 20s, not 5s: on a slower laptop the first page render under Electron's Node takes
+		// just over 5s (measured 5.6s), and an aborted first request made the gate fail.
+		req.setTimeout(20_000, () => {
 			req.destroy();
 			resolve(0);
 		});

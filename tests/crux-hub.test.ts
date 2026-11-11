@@ -80,7 +80,7 @@ it("units: the student's own units first, plus the catalogue for searching", asy
 });
 
 it("files: only hub rows, without their extracted text, and already-downloaded ones carry their path", async () => {
-	const already = path.join(documents, "Crux", "Hub", "EMM 302", "CAT 1 2024.pdf");
+	const already = path.join(documents, "Crux", "Hub", "EMM 302", "CAT 1 2024 [41].pdf");
 	fs.mkdirSync(path.dirname(already), { recursive: true });
 	fs.writeFileSync(already, "pdf");
 	routes["/api/library"] = { status: 200, body: { note: "2 files", files: [
@@ -102,7 +102,7 @@ it("download: saves under Documents/Crux/Hub/<unit>, and the second time uses th
 	globalThis.fetch = (async (url: URL) => { fetched.push(String(url)); return new Response("PDFBYTES", { status: 200 }); }) as typeof fetch;
 
 	const first = await hub().download("EMM 302", "42", "Torsion notes.pdf");
-	const expected = path.join(documents, "Crux", "Hub", "EMM 302", "Torsion notes.pdf");
+	const expected = path.join(documents, "Crux", "Hub", "EMM 302", "Torsion notes [42].pdf");
 	assert.deepEqual(first, { path: expected, left: 1, cached: false });
 	assert.equal(fs.readFileSync(expected, "utf8"), "PDFBYTES");
 	assert.equal(fs.existsSync(`${expected}.part`), false);
@@ -113,6 +113,30 @@ it("download: saves under Documents/Crux/Hub/<unit>, and the second time uses th
 	assert.deepEqual(second, { path: expected, left: null, cached: true });
 	assert.deepEqual(apiCalls, [], "a saved file must not ask Crux for another link");
 	assert.equal(fetched.length, 1);
+});
+
+it("download: two hub files with one name stay separate, and a double click spends one download", async () => {
+	routes["/api/files/42/download"] = { status: 200, body: { url: "https://cdn.discordapp.com/attachments/1/2/a.pdf", name: "notes.pdf", left: 1 } };
+	routes["/api/files/43/download"] = { status: 200, body: { url: "https://cdn.discordapp.com/attachments/1/3/b.pdf", name: "notes.pdf", left: 0 } };
+	globalThis.fetch = (async (url: URL) => new Response(String(url).includes("/2/") ? "FIRST" : "SECOND", { status: 200 })) as typeof fetch;
+	const h = hub();
+	const [a, again, b] = await Promise.all([h.download("EMM 302", "42", "notes.pdf"), h.download("EMM 302", "42", "notes.pdf"), h.download("EMM 302", "43", "notes.pdf")]);
+	assert.equal(a.path, again.path);
+	assert.notEqual(a.path, b.path);
+	assert.equal(fs.readFileSync(a.path, "utf8"), "FIRST");
+	assert.equal(fs.readFileSync(b.path, "utf8"), "SECOND");
+	assert.equal(apiCalls.filter((c) => c === "/api/files/42/download").length, 1, "the double click asked Crux once");
+});
+
+it("download: a body larger than the cap is refused even without a Content-Length, and nothing is saved", async () => {
+	routes["/api/files/50/download"] = { status: 200, body: { url: "https://cdn.discordapp.com/attachments/1/5/big.pdf", name: "big.pdf", left: 1 } };
+	const piece = new Uint8Array(8 * 1024 * 1024);
+	let sent = 0;
+	globalThis.fetch = (async () => new Response(new ReadableStream({ pull(c) { if (sent++ < 14) c.enqueue(piece); else c.close(); } }), { status: 200 })) as typeof fetch;
+	const reply = await cruxControl({ op: "download", unit: "EMM 302", id: "50", name: "big.pdf" }, hub(), null);
+	assert.equal(reply.ok, false);
+	assert.match(reply.error, /too large/);
+	assert.equal(fs.existsSync(path.join(documents, "Crux")), false);
 });
 
 it("download: a link anywhere but Discord's file hosts is refused and nothing is fetched or written", async () => {

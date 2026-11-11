@@ -51,7 +51,7 @@ describe("desktop window chrome", () => {
 		it(`${platform} uses native-height right-side controls with an Alt-accessible menu`, () => {
 			const options = windowOptions(platform);
 			assert.equal(options.titleBarStyle, "hidden");
-			assert.deepEqual(options.titleBarOverlay, { color: "#141414", symbolColor: "#e5e5e5" });
+			assert.deepEqual(options.titleBarOverlay, { color: "#120e0c", symbolColor: "#eeeff1" });
 			assert.equal(Object.hasOwn(options.titleBarOverlay, "height"), false, "omit height so the OS selects its native default");
 			assert.equal(options.trafficLightPosition, undefined);
 			assert.equal(options.autoHideMenuBar, true);
@@ -96,7 +96,7 @@ describe("desktop window chrome", () => {
 		runInNewContext(readFileSync(new URL("../electron/preload.cjs", import.meta.url), "utf8"), context);
 		assert.equal(bridge.platform, "win32");
 		assert.deepEqual(Object.keys(bridge).sort(), [
-			"chatgpt", "checkForUpdates", "chooseAttachmentFolder", "expandWindow", "getPathForFile", "getUpdateState", "getZoom", "installUpdate", "onOpenSettings", "onUpdateStatus", "onZoom", "platform", "subscriptions",
+			"chatgpt", "checkForUpdates", "chooseAttachmentFolder", "crux", "expandWindow", "getPathForFile", "getUpdateState", "getZoom", "installUpdate", "onOpenSettings", "onUpdateStatus", "onZoom", "platform", "subscriptions",
 		]);
 		assert.deepEqual(Object.keys(bridge.subscriptions as object).sort(), ["cancel", "consent", "disconnect", "login", "onChange", "open", "respond", "retry", "status"]);
 	});
@@ -155,15 +155,17 @@ describe("desktop packaging policy", () => {
 		assert.equal(config.win.verifyUpdateCodeSignature, false);
 		assert.deepEqual(config.linux.target, [{ target: "AppImage" }, { target: "deb" }]);
 		assert.equal(config.linux.syncDesktopName, true);
-		assert.equal(config.publish[0].releaseType, "draft");
+		// Crux has no update feed yet: nothing is published, so no feed is baked into the app.
+		assert.equal(config.publish, null);
 	});
 
 	it("deb has public maintainer metadata and a matching desktop identity", () => {
 		const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-		assert.equal(pkg.author.name, "Amos Blomqvist");
-		assert.equal(pkg.author.email, "255718537+amosblomqvist@users.noreply.github.com");
-		assert.equal(pkg.homepage, "https://github.com/amosblomqvist/learnharness");
-		assert.equal(pkg.desktopName, "learnharness.desktop");
+		assert.equal(pkg.author.name, "Engineering Study Hub");
+		// The LearnHarness authors stay credited in the package metadata.
+		assert.match(pkg.contributors[0].name, /LearnHarness/);
+		assert.equal(pkg.homepage, "https://crux.engineeringhub.site");
+		assert.equal(pkg.desktopName, "crux.desktop");
 	});
 });
 

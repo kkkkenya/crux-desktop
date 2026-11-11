@@ -109,6 +109,10 @@ function summaryOf(id: string): ChatSummary | null {
 			// NOT record-derived — the API route merges it (ChatListItem).
 			phase: phaseAt3Lh(messages),
 			pendingQuestion: danglingQuestionOf(messages) !== null,
+			// Practice: a posed problem with no conclude (the sidebar's
+			// "Problem waiting"); false on teaching sessions, which
+			// have no problem tool.
+			pendingProblem: activeProblemOf(messages) !== null,
 		} as ChatSummary;
 	} catch (err) {
 		console.error(`[chat ${summary.id}] summary projection failed:`, err);

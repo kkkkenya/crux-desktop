@@ -91,7 +91,8 @@ export function HubDialog({ bridge, onClose }: { bridge: CruxBridge | undefined;
 	const [files, setFiles] = useState<CruxFile[] | null>(null);
 	const [note, setNote] = useState<string | null>(null);
 	const [query, setQuery] = useState("");
-	const [busy, setBusy] = useState<string | null>(null); // a file id, "sign-in", or "files"
+	const [busy, setBusy] = useState<string | null>(null); // "sign-in" or "files"
+	const [downloading, setDownloading] = useState<ReadonlySet<string>>(new Set()); // file ids, across unit switches
 	const [message, setMessage] = useState<string>("");
 
 	useEffect(() => {
@@ -160,9 +161,10 @@ export function HubDialog({ bridge, onClose }: { bridge: CruxBridge | undefined;
 
 	const download = async (file: CruxFile) => {
 		if (!bridge || !unit) return;
-		setBusy(file.id); setMessage("");
+		if (downloading.has(file.id)) return;
+		setDownloading((current) => new Set(current).add(file.id)); setMessage("");
 		const reply = await bridge.download(unit, file.id, file.name);
-		setBusy(null);
+		setDownloading((current) => { const next = new Set(current); next.delete(file.id); return next; });
 		if (!reply.ok) { fail(reply); return; }
 		setFiles((current) => current?.map((f) => (f.id === file.id ? { ...f, path: reply.value.path } : f)) ?? null);
 		if (typeof reply.value.left === "number") setMessage(`Downloaded. ${reply.value.left} ${reply.value.left === 1 ? "download" : "downloads"} left today.`);
@@ -283,10 +285,10 @@ export function HubDialog({ bridge, onClose }: { bridge: CruxBridge | undefined;
 															<FileRow
 																key={file.id}
 																file={file}
-																busy={busy === file.id}
+																busy={downloading.has(file.id)}
 																onDownload={() => void download(file)}
 																onAdd={() => addToSession(file)}
-																onReveal={() => { if (file.path) void bridge.reveal(file.path); }}
+																onReveal={() => { if (file.path) void bridge.reveal(file.path).then((reply) => { if (!reply.ok) setMessage(reply.error); }); }}
 															/>
 														))}
 													</ul>
