@@ -43,14 +43,16 @@ const path = require("node:path");
 // renderer owns the number; this is the IPC widen target).
 const SIDEBAR_AUTOCLOSE = 928;
 
-const PRODUCT_NAME = "LearnHarness";
+const PRODUCT_NAME = "Crux";
+// Flip to true only once electron-builder.yml has a Crux publish feed.
+const CRUX_UPDATES = false;
 
 // APP NAME → userData (owner, 2026-10-10): the Application Support dir is
-// exactly "LearnHarness" in dev AND packaged. Packaged Electron would
+// exactly "Crux" in dev AND packaged. Packaged Electron would
 // otherwise derive it from package.json "name" (now lowercase
 // "learnharness"), and productName metadata alone doesn't reach app.name.
 // Must run before the LH_DEV_URL suffix below — dev becomes
-// "LearnHarness-dev".
+// "Crux-dev".
 app.setName(PRODUCT_NAME);
 const AUTH_FILE = () => path.join(app.getPath("userData"), "auth.json");
 const DATA_DIR = () => path.join(app.getPath("userData"), "data");
@@ -309,7 +311,7 @@ function createWindow(url) {
 				// height. Do not force the zoom-invariant native overlay to match
 				// the renderer's 60 CSS px bar: zooming out would cover its border.
 				// The renderer reserves the actual width via env(titlebar-area-*).
-				titleBarOverlay: { color: "#141414", symbolColor: "#e5e5e5" },
+				titleBarOverlay: { color: "#120e0c", symbolColor: "#eeeff1" },
 				// Keep the custom bar alone; Alt reveals the native menu.
 				autoHideMenuBar: true,
 			}),
@@ -327,7 +329,7 @@ function createWindow(url) {
 		// The app background (#141414) fills the lag instead. `show: false` +
 		// ready-to-show is the same treatment for first paint: the window
 		// appears only once the page has actually rendered.
-		backgroundColor: "#141414",
+		backgroundColor: "#120e0c",
 		show: false,
 		// Narrow-window behavior (owner, 2026-09-17): 640px is the floor —
 		// below it even a wrapped chrome row gets cramped and the chat header
@@ -522,8 +524,10 @@ function updateFeedAllowed(feed) {
 }
 
 function setupAutoUpdater() {
-	if (!app.isPackaged) {
-		log("auto-update: dev build — updater disabled");
+	// Crux ships no update feed yet. Until it has its own, the updater stays off in
+	// every build, so a Crux install can never fetch an upstream LearnHarness release.
+	if (!app.isPackaged || !CRUX_UPDATES) {
+		log("auto-update: updater disabled");
 		reportUpdateStatus("disabled");
 		return;
 	}

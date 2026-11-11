@@ -1,14 +1,19 @@
 {
-	"name": "learnharness",
+	"name": "crux",
 	"version": "0.5.0",
 	"license": "AGPL-3.0-only",
 	"author": {
-		"name": "Amos Blomqvist",
-		"email": "255718537+amosblomqvist@users.noreply.github.com"
+		"name": "Engineering Study Hub"
 	},
-	"homepage": "https://github.com/amosblomqvist/learnharness",
-	"desktopName": "learnharness.desktop",
-	"description": "An agent harness for learning: adaptive teaching, practice, and a persistent knowledge graph.",
+	"contributors": [
+		{
+			"name": "Amos Blomqvist and the LearnHarness contributors",
+			"url": "https://github.com/amosblomqvist/learnharness"
+		}
+	],
+	"homepage": "https://crux.engineeringhub.site",
+	"desktopName": "crux.desktop",
+	"description": "Crux: a study app that finds your level, plans the unit and teaches it step by step. Built on LearnHarness.",
 	"type": "module",
 	"private": true,
 	"main": "electron/main.cjs",

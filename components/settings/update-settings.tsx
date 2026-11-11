@@ -75,7 +75,8 @@ export function UpdateSettings({
 	const busy = state?.status === "checking" || state?.status === "downloading";
 	const status = state?.status === "downloaded" ? updateStatusText(state)
 		: failed || checkFailed ? UPDATE_ERROR : updateStatusText(state);
-	const releaseNotes = version && homepage ? `${homepage}/releases/tag/v${version}` : null;
+	// Release notes only exist where the homepage is a GitHub repository with tagged releases.
+	const releaseNotes = version && homepage.includes("github.com") ? `${homepage}/releases/tag/v${version}` : null;
 	const check = () => {
 		setCheckFailed(false);
 		void window.lh?.checkForUpdates?.().catch(() => setCheckFailed(true));

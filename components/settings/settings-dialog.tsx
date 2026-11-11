@@ -459,6 +459,19 @@ export function SettingsDialogBody({
 											void write("general", (current) => ({ ...current, autoUpdate: on }))
 										}
 									/>
+									{/* Credit and licence: Crux is a fork of LearnHarness (AGPL-3.0). */}
+									<SettingsRow
+										label="Built on LearnHarness"
+										testid="row-credit"
+										hint={
+											<>
+												<span className="block">Crux is built on LearnHarness by Amos Blomqvist and its contributors. Both are open source under the AGPL-3.0 licence.</span>
+												<a href="https://github.com/amosblomqvist/learnharness" target="_blank" rel="noopener noreferrer" className="underline-offset-2 hover:text-foreground hover:underline" data-testid="credit-link">LearnHarness on GitHub</a>
+											</>
+										}
+									>
+										{null}
+									</SettingsRow>
 									<SettingsGroup label="Dictation" testid="group-dictation-settings">
 										<SettingsRow label="Speech provider" hint="OpenAI dictation uses your OpenAI API key and is billed separately from your ChatGPT plan.">
 											<select
