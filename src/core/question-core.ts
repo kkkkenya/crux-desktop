@@ -771,16 +771,18 @@ export function buildAnswer(qd: QuestionData, req: AnswerRequest, tool?: string)
 		base.correctIndices = qd.correctIndices ?? [];
 		base.explanation = qd.explanation;
 		base.correct = base.dontKnow ? false : isCorrect(base.answers.map((a) => a.index), qd.correctIndices ?? []);
-		// The confidence slider rides on real quiz answers only — never on
-		// "I don't know" (no answer, no probability). Clamped defensively;
-		// the dock snaps to the grid, the record accepts any integer.
-		if (!base.dontKnow && req.confidence !== undefined) {
-			base.confidence = Math.max(0, Math.min(100, Math.round(req.confidence)));
-			// A resting 50 and a deliberate 50 are the same number but not the
-			// same evidence: only a slider interaction sets this true. Absent
-			// (not false) is reserved for records written before the flag.
-			base.confidenceTouched = req.confidenceTouched === true;
-		}
+	}
+	// The confidence slider rides on real quiz AND explain answers (the
+	// learner's probability that his pick or his written answer is correct)
+	// — never on "I don't know" (no answer, no probability), never on ask.
+	// Clamped defensively; the dock snaps to the grid, the record accepts any
+	// integer.
+	if ((qd.kind === "quiz" || qd.kind === "explain") && !base.dontKnow && req.confidence !== undefined) {
+		base.confidence = Math.max(0, Math.min(100, Math.round(req.confidence)));
+		// A resting 50 and a deliberate 50 are the same number but not the
+		// same evidence: only a slider interaction sets this true. Absent
+		// (not false) is reserved for records written before the flag.
+		base.confidenceTouched = req.confidenceTouched === true;
 	}
 	if (qd.kind === "explain") {
 		// No client grading — the model grades in its reply, against the
