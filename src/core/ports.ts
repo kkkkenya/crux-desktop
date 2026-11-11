@@ -26,6 +26,7 @@ import type {
 	SessionCheckpoint,
 	TurnUsage,
 	NotesSource,
+	SourceDocumentRef,
 } from "./contracts.ts";
 import type { UserSettings } from "./settings.ts";
 import type { ReviewLedger, ReviewEntry } from "./retention.ts";
@@ -35,8 +36,9 @@ import type { ReviewLedger, ReviewEntry } from "./retention.ts";
 export interface ChatStore {
 	/** Create a session record (persisted immediately). */
 	/** Create a session record; kind "practice" marks a practice session
-	 *  (absent = teach, the default). */
-	createChat(title: string, kind?: "practice"): ChatRecord;
+	 *  (absent = teach, the default). sourceDocuments (issue #175, teach
+	 *  only) records the converted material staged by the creation route. */
+	createChat(title: string, kind?: "practice", sourceDocuments?: SourceDocumentRef[]): ChatRecord;
 	/** The full record, or null if unknown id / corrupt file. */
 	getChat(id: string): ChatRecord | null;
 	/** All sessions, newest activity first (the sidebar's list view). */
