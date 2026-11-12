@@ -67,7 +67,7 @@ export interface CruxGuide {
 export interface CruxLearn { guide: CruxGuide | null; read: CruxRef[]; examples: CruxRef[]; books: { id: string; name: string }[] }
 
 const LAST_UNIT = "crux:hub-unit";
-const TIER_LABEL: Record<string, string> = { owner: "Owner", premium: "Premium", basic: "Basic", trial: "Trial" };
+const TIER_LABEL: Record<string, string> = { owner: "Owner", vvip: "Acrux", premium: "Mimosa", basic: "Gacrux", trial: "Imai" };
 
 /** When today's limit resets, in Nairobi time (the Hub's day). */
 function resetText(iso: string | null | undefined): string {

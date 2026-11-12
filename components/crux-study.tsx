@@ -15,10 +15,11 @@
  * Everything that talks to Crux goes through window.lh.crux (electron/crux-hub.cjs).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookOpenIcon, MedalIcon, NotebookPenIcon, PinIcon, Trash2Icon, UploadIcon, XIcon } from "lucide-react";
+import { BookOpenIcon, NotebookPenIcon, PinIcon, Trash2Icon, UploadIcon, XIcon } from "lucide-react";
 import { BrailleSpinner } from "@/components/braille-spinner";
 import type { CruxBridge, CruxCatalog, CruxContributors, CruxGuide, CruxLearn, CruxNote, CruxRef, CruxStudy, CruxUnit, CruxUploads } from "@/components/crux-hub";
 import { MessageResponse } from "@/components/ai-elements/message";
+import { ContributorMedal } from "@/components/contributor-medal";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -523,10 +524,10 @@ const nairobiDay = (iso: string | null) => (iso ? new Date(`${iso}T12:00:00+03:0
 
 /** What the student is told about the reward, from Crux's credit count. Pure, for tests. */
 export function rewardText(c: CruxUploads["credits"]): string {
-	if (c.earned) return `You've earned Premium until ${nairobiDay(c.until)} and a contributor medal. Thank you!`;
+	if (c.earned) return `You've earned Mimosa until ${nairobiDay(c.until)} and a contributor medal. Thank you!`;
 	const left = Math.max(0, c.goal - c.count);
 	if (c.premium) return `Your files help the whole class. ${left} more for a contributor medal.`;
-	return `${left} more file${left === 1 ? "" : "s"} the hub doesn't have, and you get Premium until ${nairobiDay(c.until)} and a contributor medal.`;
+	return `${left} more file${left === 1 ? "" : "s"} the hub doesn't have, and you get Mimosa until ${nairobiDay(c.until)} and a contributor medal.`;
 }
 
 /** "Share with your class": the student's own file, posted to the unit on the Study Hub Discord with their consent. */
@@ -622,7 +623,7 @@ export function TopContributors({ bridge }: { bridge: CruxBridge }) {
 						<span className={cn("flex size-8 items-center justify-center overflow-hidden rounded-full border-2 bg-muted text-xs font-medium", c.you ? "border-primary" : "border-card")}>
 							{c.avatar ? <img src={c.avatar} alt={c.name} className="size-full object-cover" referrerPolicy="no-referrer" /> : c.name.slice(0, 1).toUpperCase()}
 						</span>
-						{c.medal && <MedalIcon className="absolute -bottom-1 -right-1 size-3.5 text-primary drop-shadow" aria-label="Contributor medal" />}
+						{c.medal && <ContributorMedal className="absolute -bottom-1.5 -right-1.5 h-[18px] w-4" />}
 					</li>
 				))}
 			</ul>

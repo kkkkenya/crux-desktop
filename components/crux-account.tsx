@@ -21,7 +21,8 @@ export type CruxTier = "trial" | "basic" | "premium" | "vvip" | "owner";
 export interface CruxAccount { name: string; tier: CruxTier; offline: boolean; avatar: string | null }
 
 const TIERS: readonly CruxTier[] = ["trial", "basic", "premium", "vvip", "owner"];
-export const TIER_NAME: Record<CruxTier, string> = { trial: "Trial", basic: "Basic", premium: "Premium", vvip: "VVIP", owner: "Owner" };
+// Plans are named after the Southern Cross, brightest star for the highest plan (owner, 2026-11-12).
+export const TIER_NAME: Record<CruxTier, string> = { trial: "Imai", basic: "Gacrux", premium: "Mimosa", vvip: "Acrux", owner: "Owner" };
 const HUB_URL = "https://www.engineeringhub.site/";
 const RECHECK_MS = 10 * 60 * 1000;
 

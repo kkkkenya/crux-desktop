@@ -226,7 +226,7 @@ it("contributors: names, counts, medals; pictures only from Discord", async () =
 });
 
 it("rewardText: files left to Premium and a medal, or the thanks once earned", () => {
-	assert.equal(rewardText({ count: 3, goal: 10, until: "2026-12-20", premium: false, earned: false }), "7 more files the hub doesn't have, and you get Premium until 20 Dec and a contributor medal.");
-	assert.equal(rewardText({ count: 9, goal: 10, until: "2026-12-20", premium: false, earned: false }), "1 more file the hub doesn't have, and you get Premium until 20 Dec and a contributor medal.");
-	assert.match(rewardText({ count: 10, goal: 10, until: "2026-12-20", premium: true, earned: true }), /^You've earned Premium until 20 Dec and a contributor medal/);
+	assert.equal(rewardText({ count: 3, goal: 10, until: "2026-12-20", premium: false, earned: false }), "7 more files the hub doesn't have, and you get Mimosa until 20 Dec and a contributor medal.");
+	assert.equal(rewardText({ count: 9, goal: 10, until: "2026-12-20", premium: false, earned: false }), "1 more file the hub doesn't have, and you get Mimosa until 20 Dec and a contributor medal.");
+	assert.match(rewardText({ count: 10, goal: 10, until: "2026-12-20", premium: true, earned: true }), /^You've earned Mimosa until 20 Dec and a contributor medal/);
 });

@@ -18,7 +18,7 @@ import {
 import { TIER_NAME, useCruxAccount } from "@/components/crux-account";
 import { HubDialog } from "@/components/crux-hub";
 import { openCruxSetup } from "@/components/crux-study";
-import { LhMark } from "@/components/lh-mark";
+import { LhMark, PLAN_STAR, PlanStars } from "@/components/lh-mark";
 import { cn } from "@/lib/utils";
 import { kbdEventForAction, type KeyAction } from "@/src/core";
 
@@ -237,7 +237,10 @@ export function CruxRail({ sessionsOpen, onToggleSessions, onOpenSettings }: { s
 					{menu && (
 						<div className="crux-glass absolute bottom-0 left-12 z-50 w-56 rounded-xl p-3 text-sm" role="menu">
 							<p className="truncate font-medium">{account.name || "Signed in"}</p>
-							<p className="text-xs text-muted-foreground">{TIER_NAME[account.tier]} plan{account.offline ? " · offline" : ""}</p>
+							<div className="mt-1 flex items-center gap-2">
+								<PlanStars star={PLAN_STAR[account.tier] ?? null} className="size-8 shrink-0" />
+								<p className="text-xs text-muted-foreground">{TIER_NAME[account.tier]} plan{account.offline ? " · offline" : ""}</p>
+							</div>
 							<button type="button" role="menuitem" onClick={() => { setMenu(false); openCruxSetup(); }} className="mt-3 flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
 								<GraduationCapIcon className="size-3.5" aria-hidden />Set up my units
 							</button>
