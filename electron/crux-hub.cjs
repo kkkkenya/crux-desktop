@@ -22,6 +22,8 @@ const PARTITION = "persist:crux-account";
 const SIGN_IN_HOSTS = new Set([new URL(ORIGIN).host, "discord.com", "www.engineeringhub.site"]);
 const FILE_HOSTS = new Set(["cdn.discordapp.com", "media.discordapp.net"]);
 const MAX_FILE_BYTES = 100 * 1024 * 1024;
+// A student who signed in recently can keep studying without a connection for this long.
+const OFFLINE_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
 const OPS = new Set(["status", "login", "logout", "units", "files", "download", "reveal"]);
 
 class CruxError extends Error {
@@ -47,6 +49,19 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 	const ses = () => session.fromPartition(PARTITION);
 	const hubRoot = () => path.join(app.getPath("documents"), "Crux", "Hub");
 	let signInWindow = null;
+	// The last confirmed account (name and plan only, never the session), for the offline grace.
+	const accountFile = () => path.join(app.getPath("userData"), "crux-account.json");
+	const remember = (account) => {
+		try { fs.writeFileSync(accountFile(), JSON.stringify({ ...account, at: Date.now() })); } catch { /* the grace is a convenience */ }
+	};
+	const forget = () => { try { fs.rmSync(accountFile(), { force: true }); } catch { /* nothing to forget */ } };
+	const remembered = () => {
+		try {
+			const saved = JSON.parse(fs.readFileSync(accountFile(), "utf8"));
+			if (typeof saved?.at !== "number" || Date.now() - saved.at > OFFLINE_GRACE_MS || saved.at > Date.now()) return null;
+			return { signedIn: true, name: String(saved.name ?? ""), tier: String(saved.tier ?? ""), offline: true };
+		} catch { return null; }
+	};
 
 	async function api(pathname) {
 		let response;
@@ -73,10 +88,18 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 	async function status() {
 		try {
 			const me = await api("/api/me");
-			return { signedIn: true, name: String(me.name ?? ""), tier: String(me.tier ?? "") };
+			const account = { signedIn: true, name: String(me.name ?? ""), tier: String(me.tier ?? "") };
+			remember({ name: account.name, tier: account.tier });
+			return account;
 		} catch (err) {
-			if (err instanceof CruxError && err.code === "signed-out") return { signedIn: false };
-			if (err instanceof CruxError && err.code === "no-access") return { signedIn: false, problem: err.message };
+			if (err instanceof CruxError && err.code === "signed-out") { forget(); return { signedIn: false }; }
+			if (err instanceof CruxError && err.code === "no-access") { forget(); return { signedIn: false, problem: err.message }; }
+			// No connection (or Crux is down): a recent sign-in still counts, for a week.
+			if (err instanceof CruxError && (err.code === "offline" || err.code === "failed")) {
+				const saved = remembered();
+				if (saved) return saved;
+				return { signedIn: false, problem: err.message };
+			}
 			throw err;
 		}
 	}
@@ -138,6 +161,7 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 	async function logout() {
 		if (signInWindow && !signInWindow.isDestroyed()) signInWindow.close();
 		await ses().clearStorageData();
+		forget();
 		return { signedIn: false };
 	}
 

@@ -25,7 +25,7 @@ const realFetch = globalThis.fetch;
 
 function hub() {
 	return createCruxHub({
-		app: { getPath: (name: string) => { assert.equal(name, "documents"); return documents; } },
+		app: { getPath: (name: string) => { assert.ok(name === "documents" || name === "userData"); return documents; } },
 		BrowserWindow: class {},
 		session: {
 			fromPartition: (partition: string) => {
@@ -68,6 +68,27 @@ it("status: signed in with a name and tier, signed out on 401, and a plain reaso
 	const none = await hub().status();
 	assert.equal(none.signedIn, false);
 	assert.match(none.problem, /no Study Hub plan/);
+});
+
+it("status offline: a recent sign-in still counts for a week, then it doesn't; signing out or losing the plan ends it", async () => {
+	const h = hub();
+	routes["/api/me"] = { status: 200, body: { id: "1", name: "Wanjiru", tier: "basic" } };
+	await h.status();
+	routes["/api/me"] = { status: 502, body: { error: "bad gateway" } };
+	assert.deepEqual(await h.status(), { signedIn: true, name: "Wanjiru", tier: "basic", offline: true });
+
+	const file = path.join(documents, "crux-account.json");
+	const saved = JSON.parse(fs.readFileSync(file, "utf8"));
+	assert.deepEqual(Object.keys(saved).sort(), ["at", "name", "tier"], "only the name and plan are kept, never the session");
+	fs.writeFileSync(file, JSON.stringify({ ...saved, at: Date.now() - 8 * 24 * 60 * 60 * 1000 }));
+	assert.equal((await h.status()).signedIn, false, "older than a week");
+
+	routes["/api/me"] = { status: 200, body: { id: "1", name: "Wanjiru", tier: "basic" } };
+	await h.status();
+	routes["/api/me"] = { status: 403, body: { error: "no-access" } };
+	assert.equal((await h.status()).signedIn, false);
+	routes["/api/me"] = { status: 502, body: {} };
+	assert.equal((await h.status()).signedIn, false, "a lost plan is not revived by going offline");
 });
 
 it("units: the student's own units first, plus the catalogue for searching", async () => {
