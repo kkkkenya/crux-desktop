@@ -304,7 +304,7 @@ describe("AppearanceSection (thin SSR)", () => {
 		// the factory token change).
 		assert.ok(html.includes('data-testid="font-trigger"'));
 		assert.equal((html.match(/Empty = same as text/g) ?? []).length, 2);
-		assert.ok(html.includes("16px"));
+		assert.ok(html.includes("17px"));
 	});
 
 	it("a set background shows in the input, not the placeholder", () => {

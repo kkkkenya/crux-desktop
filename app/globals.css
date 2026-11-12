@@ -34,7 +34,7 @@
 :root {
 	color-scheme: dark;
 	--radius: 10px;
-	--background: #120e0c;
+	--background: var(--bg1, #120e0c);
 	--foreground: #eeeff1;
 	--card: #1b1917;
 	--card-foreground: #eeeff1;
@@ -63,7 +63,7 @@
 	   emitting runtime vars — so this is the one documented duplication:
 	   change one, change both. (owner, typography round 4: snapped from
 	   the reskin's hand-tuned 16.5 to the ladder's 16.) */
-	--lh-prose-size: 16px;
+	--lh-prose-size: 17px;
 	--lh-prose-leading: 1.5;
 	/* Markdown heading weight (appearance settings; 900 = the Black cut). */
 	--lh-heading-weight: 900;
@@ -72,7 +72,7 @@
 /* The app is always dark (<html class="dark">); mirror the same values so
    the block stays coherent under Tailwind's variant. */
 .dark {
-	--background: #120e0c;
+	--background: var(--bg1, #120e0c);
 	--foreground: #eeeff1;
 	--card: #1b1917;
 	--card-foreground: #eeeff1;
@@ -98,7 +98,7 @@
 	   emitting runtime vars — so this is the one documented duplication:
 	   change one, change both. (owner, typography round 4: snapped from
 	   the reskin's hand-tuned 16.5 to the ladder's 16.) */
-	--lh-prose-size: 16px;
+	--lh-prose-size: 17px;
 	--lh-prose-leading: 1.5;
 	/* Markdown heading weight (appearance settings; 900 = the Black cut). */
 	--lh-heading-weight: 900;
@@ -137,19 +137,19 @@
 	   toggle write a runtime --font-title no consumer ever read (owner, fix
 	   wave: toggle looked dead). Non-inline emits :root { --font-title: … }
 	   and the utility reads var(--font-title) — appearance overrides win. */
-	--text-xs: 11px;
+	--text-xs: 13px;
 	--text-xs--line-height: 1.4;
-	--text-sm: 12.5px;
+	--text-sm: 14px;
 	--text-sm--line-height: 1.4;
-	--text-base: 14px;
+	--text-base: 15px;
 	--text-base--line-height: 1.45;
-	--text-lg: 16px;
+	--text-lg: 17px;
 	--text-lg--line-height: 1.45;
-	--text-xl: 20px;
+	--text-xl: 22px;
 	--text-xl--line-height: 1.4;
-	--text-2xl: 25px;
+	--text-2xl: 30px;
 	--text-2xl--line-height: 1.3;
-	--text-3xl: 32px;
+	--text-3xl: 36px;
 	--text-3xl--line-height: 1.25;
 	/* Radii ladder — Crux corners: 4 / 10 / 14 / 16. */
 	--radius-sm: 4px;
@@ -188,8 +188,16 @@
 	}
 }
 
+/* The Crux wallpaper (app/crux-wallpaper.css) sits behind everything, so the page itself is
+   see-through; html carries the wallpaper's base colour for the moment before it paints. */
+html {
+	background: var(--bg1, #120e0c);
+	--grain: 0.16;
+	--noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
 body {
-	background: var(--color-background);
+	background: transparent;
 	color: var(--color-foreground);
 	font-family: var(--font-ui);
 }
@@ -626,4 +634,98 @@ body {
 	background-color: var(--accent);
 	outline: 1px solid var(--border);
 	border-radius: 0.25rem;
+}
+
+/* ─── Crux chrome: the rail, glass surfaces, the sessions panel ─────────────
+   Same recipe as Crux on the web: real blur only on navigation surfaces,
+   matte cards elsewhere, one loud colour (Hub yellow) for the current item. */
+:root {
+	--crux-glass: rgba(28, 25, 23, 0.62);
+	--crux-glass-bd: rgba(255, 255, 255, 0.07);
+	--crux-glass-hi: rgba(255, 255, 255, 0.04);
+	--crux-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+	--crux-spring: cubic-bezier(0.3, 1.25, 0.4, 1);
+}
+.crux-glass {
+	background: var(--crux-glass);
+	border: 1px solid var(--crux-glass-bd);
+	box-shadow: var(--crux-shadow), inset 0 1px 0 var(--crux-glass-hi);
+	backdrop-filter: blur(14px) saturate(1.2);
+}
+@supports not (backdrop-filter: blur(1px)) {
+	.crux-glass { background: var(--card); }
+}
+.crux-panel {
+	background: color-mix(in srgb, var(--background) 72%, transparent);
+	backdrop-filter: blur(14px) saturate(1.2);
+}
+.crux-rail {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 4px;
+	width: 56px;
+	flex-shrink: 0;
+	height: 100dvh;
+	padding: 12px 0;
+	background: var(--crux-glass);
+	border-right: 1px solid var(--crux-glass-bd);
+	backdrop-filter: blur(14px) saturate(1.2);
+	position: relative;
+	z-index: 30;
+}
+.crux-rail-btn {
+	position: relative;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 40px;
+	height: 40px;
+	border-radius: 12px;
+	color: var(--muted-foreground);
+	cursor: pointer;
+	transition: background-color 0.15s, color 0.15s, transform 0.25s var(--crux-spring);
+}
+.crux-rail-btn:hover { background: var(--accent); color: var(--foreground); }
+.crux-rail-btn:active { transform: scale(0.94); }
+.crux-rail-btn:focus-visible, .crux-rail-avatar:focus-visible { outline: 2px solid var(--a2, var(--ring)); outline-offset: 2px; }
+.crux-rail-btn.is-active { background: var(--primary); color: var(--primary-foreground); }
+.crux-rail-sep { width: 24px; height: 1px; margin: 6px 0; background: var(--border); }
+.crux-rail-avatar {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 36px;
+	height: 36px;
+	margin-top: 4px;
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--a2, var(--primary)) 28%, transparent);
+	color: var(--foreground);
+	font-weight: 700;
+	font-size: 14px;
+	cursor: pointer;
+}
+/* Tooltips to the right of a rail icon, from data-tip. */
+.crux-rail [data-tip]::after {
+	content: attr(data-tip);
+	position: absolute;
+	left: calc(100% + 10px);
+	top: 50%;
+	transform: translateY(-50%);
+	padding: 4px 8px;
+	border-radius: 8px;
+	background: var(--foreground);
+	color: var(--background);
+	font-size: 12px;
+	font-weight: 600;
+	white-space: nowrap;
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 0.12s;
+	z-index: 60;
+}
+.crux-rail [data-tip]:hover::after, .crux-rail [data-tip]:focus-visible::after { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+	.crux-rail-btn { transition: none; }
+	.wallpaper .wl { animation: none; }
 }

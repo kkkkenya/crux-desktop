@@ -30,6 +30,7 @@
  * as text".
  */
 
+import { useCruxLook, WALLPAPERS, type Wallpaper } from "@/components/crux-look";
 import { useEffect, useRef, useState } from "react";
 import {
 	EXTRACTION_CHUNK_TOKENS_FLOOR,
@@ -184,8 +185,17 @@ export function AppearanceSection({
 		};
 	}, [fontMenuOpen]);
 
+	const look = useCruxLook();
 	return (
 		<>
+			<SettingsRow label="Wallpaper" hint="The picture behind everything, as on Crux for the web." testid="row-wallpaper">
+				<ThinSelect value={look.wallpaper} ariaLabel="wallpaper" onChange={(value) => look.setWallpaper(value as Wallpaper)} testid="select-wallpaper">
+					{WALLPAPERS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+				</ThinSelect>
+			</SettingsRow>
+			<SettingsRow label="Moving wallpaper" hint="Off holds the wallpaper still." testid="row-wallpaper-motion">
+				<Toggle checked={look.motion} label="moving wallpaper" onChange={look.setMotion} />
+			</SettingsRow>
 			<SettingsRow label="Mode" hint="Coming soon" testid="row-mode" dimmed>
 				<ThinSelect value="dark" ariaLabel="mode" onChange={() => {}} testid="select-mode" disabled>
 					<option value="dark">Dark</option>

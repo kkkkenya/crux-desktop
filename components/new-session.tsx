@@ -1,5 +1,6 @@
 "use client";
 
+import { takeDraft } from "@/components/crux-rail";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Conversation, ConversationContent, ConversationEmptyState } from "@/components/ai-elements/conversation";
@@ -259,6 +260,12 @@ export function NewSession({ initialConfigured, mode = "teach" }: { initialConfi
 		textRef.current = v;
 		setText(v);
 	};
+	// A request picked in the Crux search or "Surprise me" arrives typed in, ready to send.
+	useEffect(() => {
+		const draft = takeDraft();
+		if (draft) applyText(draft);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [mode]);
 	const [busy, setBusy] = useState(false);
 	const startingRef = useRef(false);
 	const starterRef = useRef(new SessionStarter());
