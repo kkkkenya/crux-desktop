@@ -151,8 +151,13 @@ dmg:
       type: link
       path: /Applications
 afterPack: scripts/after-pack.cjs
+# Windows: clear an inherited Low integrity label from the installer (see the script).
+afterAllArtifactBuild: scripts/after-all-artifacts.cjs
 win:
   icon: build/icon.ico
+  # English only (Crux, 2026-11-12): drops the other Chromium language packs.
+  electronLanguages:
+    - en-US
   target:
     - target: nsis
       arch:
@@ -162,9 +167,19 @@ win:
   # skip signing, and do not require a publisher signature for updates.
   signExecutable: false
   verifyUpdateCodeSignature: false
+# Windows installer (2026-11-12): an assisted per-user install the student clicks through,
+# with shortcuts and an uninstaller in Windows Apps and the Start Menu (build/installer.nsh).
+# The uninstaller asks before deleting sessions and settings; it keeps them unless told to.
 nsis:
-  oneClick: true
+  oneClick: false
   perMachine: false
+  allowElevation: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: Crux
+  uninstallDisplayName: Crux
+  include: build/installer.nsh
 linux:
   icon: build/icon.png
   # No arch on these targets: a config arch overrides the --x64/--arm64 CLI

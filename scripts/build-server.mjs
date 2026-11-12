@@ -117,6 +117,37 @@ function hoistNestedNeighbours() {
 }
 hoistNestedNeighbours();
 
+// 2b) No symbolic links in the payload (Crux, 2026-11-12). Next writes its
+//     hashed external aliases (.next/node_modules/<pkg>-<hash>) as links to
+//     ABSOLUTE paths on the build machine. They break on every other computer,
+//     and the Windows installer cannot create links without admin rights: it
+//     failed on them and aborted. Each link becomes a real copy of its package.
+function replaceLinks(dir) {
+	for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+		const full = path.join(dir, entry.name);
+		if (entry.isSymbolicLink()) {
+			const real = fs.realpathSync(full);
+			fs.rmSync(full, { recursive: true, force: true });
+			if (fs.statSync(real).isDirectory()) fs.cpSync(real, full, { recursive: true, dereference: true });
+			else fs.copyFileSync(real, full);
+			console.log(`[build-server] link replaced by a copy: ${path.relative(STANDALONE, full).split(path.sep).join("/")}`);
+		} else if (entry.isDirectory()) replaceLinks(full);
+	}
+}
+replaceLinks(STANDALONE);
+const leftover = [];
+(function findLinks(dir) {
+	for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+		const full = path.join(dir, entry.name);
+		if (entry.isSymbolicLink()) leftover.push(full);
+		else if (entry.isDirectory()) findLinks(full);
+	}
+})(STANDALONE);
+if (leftover.length) {
+	console.error(`[build-server] symbolic links remain in the payload: ${leftover.join(", ")}`);
+	process.exit(1);
+}
+
 // 3) Sanity: the runtime-read prompt assets must be present (the teacher
 //    agent reads them from disk at request time).
 for (const asset of [
