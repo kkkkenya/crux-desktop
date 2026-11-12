@@ -24,6 +24,7 @@ import type { ModelCatalogEntry } from "@/src/core";
 import { CLAUDE_CODE_PROVIDER, fuzzyScore, isCustomProviderId, subscriptionLabel } from "@/src/core";
 import { formatTokens } from "@/components/usage-format";
 import { SearchMenuList } from "./search-menu-list";
+import { compareModelsBestFirst } from "@/components/model-rank";
 
 function priceLabel(cost: ModelCatalogEntry["cost"]): string {
 	if (!cost) return "Unpriced";
@@ -72,7 +73,8 @@ export function ModelMenuList({
 				items={visionItems}
 				itemKey={(m) => `${m.provider}/${m.id}`}
 				searchTerms={(m) => [m.provider, m.id, m.name]}
-				compare={(a, b) => a.id.localeCompare(b.id)}
+				// Best models first, then older ones (components/model-rank.ts).
+				compare={compareModelsBestFirst(visionItems ?? [])}
 				prioritize={vision ? (m) => m.input.includes("image") : undefined}
 				isSelected={(m) => m.id === effectiveId && m.provider === (effectiveProvider ?? m.provider)}
 				onPick={onPick}
