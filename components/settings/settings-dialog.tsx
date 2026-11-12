@@ -51,6 +51,8 @@ import { Hint } from "@/components/ui/hint";
 import { useDictationActive } from "@/components/dictation-state";
 import { AppearanceSection, GraphSection } from "./appearance-section.tsx";
 import { KeyboardSection } from "./keyboard-section.tsx";
+import { requestHomeAction, type HomeAction } from "@/components/crux-home-actions";
+import { useRouter } from "next/navigation";
 import { ChatGPTUIProvider } from "./chatgpt-connection.tsx";
 import { NativeSubscriptionUIProvider } from "./subscription-connections.tsx";
 
@@ -544,6 +546,7 @@ export function SettingsDialogBody({
 									title="Graph"
 									testid="section-graph"
 								>
+									<GraphTools onClose={onClose} />
 									<GraphSection
 										graph={record.graph}
 										onSectionChange={(next: GraphSettings) =>
@@ -566,5 +569,29 @@ export function SettingsDialogBody({
 				</div>
 			</div>
 		</div>
+	);
+}
+
+/** Crux: the home screen's Chains and Extract files, kept here so the home screen stays quiet. */
+function GraphTools({ onClose }: { onClose: () => void }) {
+	const router = useRouter();
+	const go = (action: HomeAction) => {
+		// On the home screen this opens at once (the file picker needs this very click).
+		if (!requestHomeAction(action)) router.push("/");
+		onClose();
+	};
+	const button = "h-7 cursor-pointer rounded-lg border px-2.5 text-xs transition-colors hover:bg-accent";
+	return (
+		<SettingsGroup label="Your graph" testid="graph-tools">
+			<SettingsRow label="Reasoning chains" hint="Every chain in your graph, with where it came from.">
+				<button type="button" className={button} onClick={() => go("chains")} data-testid="open-chain-table">Open chains</button>
+			</SettingsRow>
+			<SettingsRow label="Extract files into the graph" hint="Notes become graph nodes. For a lesson, attach material to the session instead.">
+				<span className="flex gap-1.5">
+					<button type="button" className={button} onClick={() => go("extract-files")} data-testid="import-notes">Files…</button>
+					<button type="button" className={button} onClick={() => go("extract-folder")}>Folder…</button>
+				</span>
+			</SettingsRow>
+		</SettingsGroup>
 	);
 }

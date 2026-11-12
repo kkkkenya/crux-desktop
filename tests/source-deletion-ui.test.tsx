@@ -6,6 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { parseHTML } from "linkedom";
 import { ChainTableOverlay } from "../components/chain-table.tsx";
 import { MinimalHome } from "../components/minimal-home.tsx";
+import { requestHomeAction } from "../components/crux-home-actions.ts";
 import { ServerEventsProvider } from "../components/server-events.tsx";
 import type { GraphNode, SourceDirectory } from "../src/core/index.ts";
 const dom = parseHTML("<html><body></body></html>");
@@ -154,7 +155,7 @@ it("minimal home refreshes its snapshot and summary immediately after source del
 	};
 	await mount(<MinimalHome />);
 	assert.match(document.querySelector('[data-testid="knowledge-summary"]')!.textContent!, /1 imported note/);
-	await click("open-chain-table"); await click("cluster-checkbox-a"); await click("chain-delete"); await click("source-delete-confirm");
+	await act(async () => { requestHomeAction("chains"); }); await click("cluster-checkbox-a"); await click("chain-delete"); await click("source-delete-confirm");
 	assert.match(document.querySelector('[data-testid="knowledge-summary"]')!.textContent!, /0 imported notes/);
 	assert.equal(document.querySelector('[data-testid="cluster-checkbox-a"]'), null);
 });

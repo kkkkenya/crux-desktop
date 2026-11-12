@@ -3,6 +3,8 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type ChangeEvent } from "react";
 import { WaypointsIcon } from "lucide-react";
 import { Hint } from "@/components/ui/hint";
+import { useHomeAction } from "@/components/crux-home-actions";
+import { cn } from "@/lib/utils";
 import { createNotesImportQueue, EMPTY_IMPORT_QUEUE, notesPath } from "./notes-import-queue";
 import { IMPORT_ACCEPT } from "@/lib/notes-import-limits";
 
@@ -92,6 +94,16 @@ export function NotesImportControl({ importing, onImportFiles }: { importing: bo
 	const filesRef = useRef<HTMLInputElement>(null);
 	const folderRef = useRef<HTMLInputElement>(null);
 	const [open, setOpen] = useState(false);
+	// Crux: the button lives in Settings, Graph. It shows here only while extracting, or when Settings sent
+	// the student from another page (no click left to open the picker with, so the menu opens instead).
+	const [summoned, setSummoned] = useState(false);
+	useHomeAction((action, later) => {
+		if (action !== "extract-files" && action !== "extract-folder") return false;
+		if (later) { setSummoned(true); setOpen(true); return true; }
+		(action === "extract-files" ? filesRef : folderRef).current?.click();
+		return true;
+	});
+	const shown = importing || summoned;
 	const hintId = useId();
 	const onChange = (event: ChangeEvent<HTMLInputElement>) => {
 		onImportFiles(event.target.files);
@@ -99,9 +111,9 @@ export function NotesImportControl({ importing, onImportFiles }: { importing: bo
 	};
 	const choices = [["Files", filesRef], ["Folder", folderRef]] as const;
 	return (
-		<div className="relative shrink-0 rounded-xl border bg-card/85 px-1 py-[3px] shadow-lg backdrop-blur"
-			onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}
-			onKeyDown={(event) => { if (event.key === "Escape") setOpen(false); }}>
+		<div className={cn("relative shrink-0 rounded-xl border bg-card/85 px-1 py-[3px] shadow-lg backdrop-blur", !shown && "hidden")}
+			onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) { setOpen(false); setSummoned(false); } }}
+			onKeyDown={(event) => { if (event.key === "Escape") { setOpen(false); setSummoned(false); } }}>
 			<input ref={filesRef} type="file" multiple accept={IMPORT_ACCEPT} className="hidden" onChange={onChange} />
 			<input ref={folderRef} type="file" {...{ webkitdirectory: "" }} className="hidden" onChange={onChange} />
 			<Hint label="Extract files into the graph" side="bottom">
@@ -114,7 +126,7 @@ export function NotesImportControl({ importing, onImportFiles }: { importing: bo
 				<div role="menu" aria-label="Extract files into the graph" aria-describedby={hintId} className="absolute right-0 top-full z-50 mt-1 w-52 rounded-lg border bg-card p-1 shadow-lg">
 					<div role="none"><p id={hintId} className="px-2 py-1.5 text-xs leading-relaxed text-muted-foreground">For lessons, attach material to a session instead.</p></div>
 					{choices.map(([label, input]) => <button key={label} type="button" role="menuitem" className="block w-full rounded px-2 py-1 text-left text-xs hover:bg-accent"
-						onClick={() => { setOpen(false); input.current?.click(); }}>{label}</button>)}
+						onClick={() => { setOpen(false); setSummoned(false); input.current?.click(); }}>{label}</button>)}
 				</div>
 			)}
 		</div>

@@ -45,8 +45,9 @@ describe("GraphChromeRow — the empty-graph ruling (owner, 2026-09-25)", () => 
 		// the settings gear is the lucide-settings svg (tooltip wave: its old
 		// native title is gone — the styled tooltip carries the label now)
 		assert.ok(!html.includes("lucide-settings"), "settings is a lie on an empty graph");
-		assert.ok(html.includes('data-testid="open-chain-table"'), "source inventory includes chats/files without graph nodes");
-		assert.equal(html.split("graph-chrome-fade-in").length - 1, 1, "only the inventory button has the appearance animation");
+		// Crux: Chains moved to Settings, Graph; Extract files stays mounted (hidden) so Settings can open its picker.
+		assert.ok(!html.includes('data-testid="open-chain-table"'), "chains open from Settings now");
+		assert.equal(html.split("graph-chrome-fade-in").length - 1, 0, "nothing gated renders on an empty graph");
 	});
 
 	it("empty graph uses the same session-first lead and secondary material guidance as home", () => {
@@ -61,9 +62,8 @@ describe("GraphChromeRow — the empty-graph ruling (owner, 2026-09-25)", () => 
 		assert.ok(html.includes('data-testid="import-notes"'));
 		assert.ok(html.includes("Search nodes…"));
 		assert.ok(html.includes("lucide-settings"), "the settings gear renders");
-		assert.ok(html.includes('data-testid="open-chain-table"'), "the chains entry renders");
-		// the appear-once fade rides exactly the three gated controls, never Import Notes
-		assert.equal(html.split("graph-chrome-fade-in").length - 1, 3, "three fade carriers: search + chains + settings");
+		assert.ok(!html.includes('data-testid="open-chain-table"'), "chains open from Settings now");
+		assert.equal(html.split("graph-chrome-fade-in").length - 1, 2, "two fade carriers: search + settings");
 	});
 
 	it("the no-match note renders only when the wrapper says so (its truth stays upstream)", () => {

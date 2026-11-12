@@ -64,6 +64,7 @@
  */
 
 import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useHomeAction } from "@/components/crux-home-actions";
 import { NotesImportControl, NotesImportErrors, NotesImportNotices, useNotesImport } from "@/components/notes-import.tsx";
 import Link from "next/link";
 import { FileTextIcon, ListTreeIcon, Loader2Icon, SearchIcon, SettingsIcon, WaypointsIcon } from "lucide-react";
@@ -899,19 +900,7 @@ export function GraphChromeRow({
 			)}
 			{/* The chain table (chains overlay, owner plan 2026-09-29). Own
 			    container (36px band), between the search and Import. */}
-			<div className="graph-chrome-fade-in shrink-0 rounded-xl border bg-card/85 px-1 py-[3px] shadow-lg backdrop-blur">
-					<Hint label="Every reasoning chain" side="bottom">
-						<button
-							type="button"
-							onClick={onOpenChains}
-							data-testid="open-chain-table"
-							className="flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-xs text-muted-foreground transition-colors hover:bg-accent"
-						>
-							<ListTreeIcon className="size-3" />
-							Chains
-						</button>
-					</Hint>
-				</div>
+			{/* Crux: Chains moved to Settings, Graph (crux-home-actions); the graph view still opens the table. */}
 			{/* Import notes — its own container (36px, header band); ALWAYS
 			    rendered (the empty-graph ruling above — the entry point). */}
 			<NotesImportControl importing={importing} onImportFiles={onImportFiles} />
@@ -1068,6 +1057,7 @@ export function GraphView({
 	// The chain table overlay (chains-overlay plan, 2026-09-29) —
 	// component-local: a browsing surface, not graph state.
 	const [chainsOpen, setChainsOpen] = useState(false);
+	useHomeAction((action) => { if (action !== "chains") return false; setChainsOpen(true); return true; });
 	useEffect(() => {
 		if (chainsOpen) return;
 		const onFind = () => searchInputRef.current?.focus();
