@@ -19,6 +19,7 @@ type SearchSpec = {
 function getWindowsSearchSpec(env: BinaryLookup["env"], homeDir: string): SearchSpec {
 	const paths = path.win32;
 	const appData = env.APPDATA ?? paths.join(homeDir, "AppData", "Roaming");
+	const npmPrefix = env.npm_config_prefix ?? paths.join(appData, "npm");
 
 	return {
 		paths,
@@ -28,7 +29,10 @@ function getWindowsSearchSpec(env: BinaryLookup["env"], homeDir: string): Search
 		knownDirs: [
 			paths.join(homeDir, ".local", "bin"),
 			paths.join(homeDir, ".claude", "local"),
-			env.npm_config_prefix ?? paths.join(appData, "npm"),
+			npmPrefix,
+			// `npm i -g @anthropic-ai/claude-code` puts only a claude.cmd shim in the
+			// prefix; the real native claude.exe it calls sits in the package's bin.
+			paths.join(npmPrefix, "node_modules", "@anthropic-ai", "claude-code", "bin"),
 		],
 	};
 }

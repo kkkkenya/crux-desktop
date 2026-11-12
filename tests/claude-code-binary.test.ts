@@ -59,6 +59,13 @@ test("windows prefers claude.exe anywhere over claude.cmd, which Node cannot spa
 	assert.equal(resolveWith(executables, env, "win32", winHome), `${winHome}\\.local\\bin\\claude.exe`);
 });
 
+test("windows finds the native claude.exe inside an npm global install, behind the .cmd shim", () => {
+	const winHome = "C:\\Users\\u";
+	const env = { PATH: "C:\\bin", APPDATA: `${winHome}\\AppData\\Roaming` };
+	const exe = `${winHome}\\AppData\\Roaming\\npm\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe`;
+	assert.equal(resolveWith([`${winHome}\\AppData\\Roaming\\npm\\claude.cmd`, exe], env, "win32", winHome), exe);
+});
+
 test("relative Windows PATH entries are fixed to an absolute discovery identity", () => {
 	assert.equal(resolveClaudeBinary({ env: { PATH: ".\\bin" }, platform: "win32", homeDir: "C:\\Users\\u", cwd: "C:\\server",
 		isExecutable: (candidate) => candidate === "C:\\server\\bin\\claude.exe",
