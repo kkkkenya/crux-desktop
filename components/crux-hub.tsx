@@ -29,7 +29,36 @@ export interface CruxBridge {
 	files: (unit: string) => Promise<CruxReply<{ note: string | null; files: CruxFile[] }>>;
 	download: (unit: string, id: string, name: string) => Promise<CruxReply<{ path: string; left: number | null; cached: boolean }>>;
 	reveal: (path: string) => Promise<CruxReply<boolean>>;
+	// Study setup, the notes panel and "open in book" (components/crux-study.tsx).
+	study: () => Promise<CruxReply<CruxStudy>>;
+	catalog: (course?: string, year?: number) => Promise<CruxReply<CruxCatalog>>;
+	saveSetup: (setup: CruxSetupChoice) => Promise<CruxReply<CruxStudy>>;
+	skipSetup: () => Promise<CruxReply<boolean>>;
+	addNote: (note: { text: string; unit: string | null; from?: string }) => Promise<CruxReply<CruxNote>>;
+	removeNote: (id: string) => Promise<CruxReply<boolean>>;
+	learn: (unit: string, topicId: string) => Promise<CruxReply<CruxLearn>>;
+	makeGuide: (unit: string, topicId: string, fresh?: boolean) => Promise<CruxReply<CruxGuide>>;
+	openAt: (unit: string, id: string, name: string, page: number | null) => Promise<CruxReply<{ path: string; left: number | null }>>;
 }
+export interface CruxNote { id: string; text: string; unit: string | null; from: string; at: string }
+export interface CruxStudy {
+	units: (CruxUnit & { catDate: string | null })[];
+	topics: { id: string; unit: string; name: string }[];
+	notes: CruxNote[];
+	cohort: { course: string; year: number; sem: number } | null;
+	setupSkipped: boolean;
+}
+export interface CruxCatalog { courses: { code: string; name: string }[]; course: string; year: number | null; core: CruxUnit[]; shared: CruxUnit[] }
+export interface CruxSetupChoice { cohort: { course: string; year: number; sem: number }; units: CruxUnit[]; dates: Record<string, string> }
+export interface CruxRef { fileId: string; name: string; pages: number[] | null; snippet: string }
+export interface CruxGuide {
+	overview: string;
+	outline: { name: string; expect: string; skip: string; formulas: string[]; read: { book: string; where: string; focus: string; page: number | null }[] }[];
+	exam: string;
+	plan: string[];
+	checklist: string[];
+}
+export interface CruxLearn { guide: CruxGuide | null; read: CruxRef[]; examples: CruxRef[]; books: { id: string; name: string }[] }
 
 const LAST_UNIT = "crux:hub-unit";
 const TIER_LABEL: Record<string, string> = { owner: "Owner", premium: "Premium", basic: "Basic", trial: "Trial" };

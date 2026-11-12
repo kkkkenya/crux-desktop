@@ -13,8 +13,9 @@
  * The files ride the CREATE request (start-session.ts builds the multipart
  * body); nothing is read in the browser.
  */
-import { useRef, type ChangeEvent } from "react";
-import { FileTextIcon, XIcon } from "lucide-react";
+import { useRef, useState, type ChangeEvent } from "react";
+import { FileTextIcon, LibraryIcon, XIcon } from "lucide-react";
+import { HubDialog } from "@/components/crux-hub";
 import { Hint } from "@/components/ui/hint";
 import type { SourceDocumentRef } from "@/src/core";
 
@@ -49,6 +50,9 @@ export function SourceDocumentsPicker({ documents, onFiles }: {
 	onFiles: (files: File[]) => void;
 }) {
 	const inputRef = useRef<HTMLInputElement>(null);
+	// Crux: notes and past papers from the Study Hub, attached to the first message like the paperclip does.
+	const [hub, setHub] = useState(false);
+	const bridge = typeof window === "undefined" ? undefined : window.lh?.crux;
 	const onChange = (event: ChangeEvent<HTMLInputElement>) => {
 		const picked = Array.from(event.target.files ?? []);
 		// Same-name files are one source (the identity rule); a re-pick of an
@@ -60,7 +64,7 @@ export function SourceDocumentsPicker({ documents, onFiles }: {
 	return (
 		<div data-testid="source-documents-picker" className="flex flex-wrap items-center gap-1.5">
 			<input ref={inputRef} type="file" multiple accept=".md,.markdown,.txt,.pdf" className="hidden" onChange={onChange} />
-			<Hint label="Teach from your own documents" side="bottom">
+			<Hint label="Teach from your own notes or past papers on this computer" side="bottom">
 				<button
 					type="button"
 					data-testid="add-documents"
@@ -73,9 +77,23 @@ export function SourceDocumentsPicker({ documents, onFiles }: {
 					}
 				>
 					<FileTextIcon aria-hidden="true" className="size-3" />
-					{documents.length > 0 ? `Documents (${documents.length})` : "Add documents"}
+					{documents.length > 0 ? `Documents (${documents.length})` : "Add notes or past papers"}
 				</button>
 			</Hint>
+			{bridge && (
+				<Hint label="Notes and past papers from the Study Hub" side="bottom">
+					<button
+						type="button"
+						data-testid="add-from-hub"
+						onClick={() => setHub(true)}
+						className="flex cursor-pointer items-center gap-1.5 rounded-full border border-dashed border-border/80 bg-transparent px-3 py-1.5 font-ui text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+					>
+						<LibraryIcon aria-hidden="true" className="size-3" />
+						From the Hub
+					</button>
+				</Hint>
+			)}
+			{hub && <HubDialog bridge={bridge} onClose={() => setHub(false)} />}
 			{documents.map((file) => (
 				<ChosenDocumentChip key={file.name} name={file.name} onRemove={() => onFiles(documents.filter((f) => f !== file))} />
 			))}

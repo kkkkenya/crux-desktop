@@ -16,6 +16,7 @@
  */
 const fs = require("node:fs");
 const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 
 const ORIGIN = (process.env.CRUX_ORIGIN || "https://crux.engineeringhub.site").replace(/\/+$/, "");
 const PARTITION = "persist:crux-account";
@@ -24,7 +25,15 @@ const FILE_HOSTS = new Set(["cdn.discordapp.com", "media.discordapp.net"]);
 const MAX_FILE_BYTES = 100 * 1024 * 1024;
 // A student who signed in recently can keep studying without a connection for this long.
 const OFFLINE_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
-const OPS = new Set(["status", "login", "logout", "units", "files", "download", "reveal"]);
+const OPS = new Set([
+	"status", "login", "logout", "units", "files", "download", "reveal",
+	// Study setup, the notes panel and "open in book" (2026-11-12).
+	"study", "catalog", "saveSetup", "skipSetup", "addNote", "removeNote", "learn", "makeGuide", "openAt",
+]);
+const ID = /^[\w-]{1,40}$/;
+const UNIT = /^[A-Z]{2,5} ?\d{3}[A-Z]?$/;
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const text = (v, max) => String(v ?? "").trim().slice(0, max);
 
 class CruxError extends Error {
 	constructor(code, message, extra) {
@@ -64,10 +73,12 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 		} catch { return null; }
 	};
 
-	async function api(pathname) {
+	async function api(pathname, method = "GET", payload) {
 		let response;
 		try {
-			response = await ses().fetch(`${ORIGIN}${pathname}`, { headers: { accept: "application/json" }, redirect: "manual" });
+			const headers = { accept: "application/json" };
+			if (payload !== undefined) headers["content-type"] = "application/json";
+			response = await ses().fetch(`${ORIGIN}${pathname}`, { method, headers, body: payload === undefined ? undefined : JSON.stringify(payload), redirect: "manual" });
 		} catch (err) {
 			throw new CruxError("offline", "Could not reach Crux. Check your internet connection and try again.");
 		}
@@ -79,10 +90,14 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 		}
 		if (response.status === 429) {
 			throw new CruxError(body?.error === "download-limit" ? "download-limit" : "limit",
-				body?.error === "download-limit" ? "Today's downloads are used up on your plan." : "Today's limit is used up.",
+				body?.error === "download-limit" ? "Today's downloads are used up on your plan." : (typeof body?.error === "string" ? body.error.slice(0, 300) : "Today's limit is used up."),
 				{ resetsAt: body?.resetsAt ?? null });
 		}
-		if (!response.ok || body === null) throw new CruxError("failed", `Crux answered ${response.status}. Try again in a moment.`);
+		if (!response.ok || body === null) {
+			// Crux's own words for a refusal it explains (a 4xx with { error }), else a plain retry message.
+			const said = response.status >= 400 && response.status < 500 && typeof body?.error === "string" ? body.error.slice(0, 300) : "";
+			throw new CruxError("failed", said || `Crux answered ${response.status}. Try again in a moment.`);
+		}
 		return body;
 	}
 
@@ -269,7 +284,160 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 		return true;
 	}
 
-	return { status, login, logout, units, files, download, reveal, hubRoot };
+	// ---- Study setup, notes panel, study guides, open in book (2026-11-12) ----
+
+	// Kept on this computer only: "I'm not an engineering student" skips the setup for good.
+	const prefsFile = () => path.join(app.getPath("userData"), "crux-prefs.json");
+	const prefs = () => { try { return JSON.parse(fs.readFileSync(prefsFile(), "utf8")) ?? {}; } catch { return {}; } };
+	const setPref = (key, value) => {
+		try { fs.writeFileSync(prefsFile(), JSON.stringify({ ...prefs(), [key]: value })); } catch { /* a convenience */ }
+	};
+
+	const noteOf = (n) => ({ id: String(n?.id ?? ""), text: String(n?.text ?? ""), unit: typeof n?.unit === "string" ? n.unit : null, from: typeof n?.from === "string" ? n.from : "", at: String(n?.at ?? "") });
+	const list = (v) => (Array.isArray(v) ? v : []);
+
+	/** What the notes panel and the setup need from the student's Crux document. */
+	async function study() {
+		const state = await api("/api/state");
+		const data = state?.data ?? {};
+		return {
+			units: list(data.units).filter((u) => u && typeof u.code === "string").map((u) => ({ code: u.code, title: String(u.title ?? ""), catDate: typeof u.catDate === "string" ? u.catDate : null })),
+			topics: list(data.topics).filter((t) => t && typeof t.id === "string" && typeof t.unit === "string").map((t) => ({ id: t.id, unit: t.unit, name: String(t.name ?? "") })),
+			notes: list(data.stickies).filter((n) => n && typeof n.id === "string").map(noteOf),
+			cohort: state?.settings?.cohort ?? null,
+			setupSkipped: prefs().setupSkipped === true,
+		};
+	}
+
+	async function catalog(course, year) {
+		const q = new URLSearchParams();
+		if (typeof course === "string" && /^[A-Z]{3}$/.test(course)) q.set("course", course);
+		if (Number.isInteger(year) && year >= 1 && year <= 5) q.set("year", String(year));
+		const c = await api(`/api/catalog?${q}`);
+		const units = (v) => list(v).filter((u) => u && typeof u.code === "string").map((u) => ({ code: u.code, title: String(u.title ?? "") }));
+		return {
+			courses: list(c?.courses).filter((x) => x && typeof x.code === "string").map((x) => ({ code: x.code, name: String(x.name ?? x.code) })),
+			course: String(c?.course ?? ""), year: Number(c?.year) || null,
+			core: units(c?.core), shared: units(c?.shared),
+		};
+	}
+
+	/** Course, year and semester, the units taken, and any CAT dates, saved to Crux in that order. */
+	async function saveSetup(setup) {
+		const cohort = setup?.cohort;
+		if (!cohort || !/^[A-Z]{3}$/.test(String(cohort.course)) || ![1, 2, 3, 4, 5].includes(cohort.year) || ![1, 2].includes(cohort.sem)) {
+			throw new CruxError("bad-request", "Pick a course, a year and a semester.");
+		}
+		const picked = list(setup.units).filter((u) => u && UNIT.test(String(u.code))).slice(0, 20)
+			.map((u) => ({ code: String(u.code), title: text(u.title, 200) }));
+		if (picked.length === 0) throw new CruxError("bad-request", "Pick at least one unit.");
+		await api("/api/settings", "POST", { cohort: { course: cohort.course, year: cohort.year, sem: cohort.sem } });
+		await api("/api/units", "PUT", picked);
+		const dates = setup.dates && typeof setup.dates === "object" ? setup.dates : {};
+		for (const u of picked) {
+			const d = dates[u.code];
+			if (d === "TBA" || (typeof d === "string" && DAY.test(d))) await api(`/api/units?code=${encodeURIComponent(u.code)}`, "PATCH", { catDate: d });
+		}
+		setPref("setupSkipped", false);
+		return study();
+	}
+
+	function skipSetup() { setPref("setupSkipped", true); return true; }
+
+	async function addNote(note) {
+		const payload = { text: text(note?.text, 2000), unit: typeof note?.unit === "string" && UNIT.test(note.unit) ? note.unit : null };
+		if (!payload.text) throw new CruxError("bad-request", "Write something first.");
+		const from = text(note?.from, 120);
+		if (from) payload.from = from;
+		return noteOf(await api("/api/stickies", "POST", payload));
+	}
+
+	async function removeNote(id) {
+		if (typeof id !== "string" || !ID.test(id)) throw new CruxError("bad-request", "That note can't be removed.");
+		await api(`/api/stickies/${id}`, "DELETE");
+		return true;
+	}
+
+	const refOf = (r) => ({
+		fileId: String(r?.fileId ?? ""), name: String(r?.name ?? ""),
+		pages: Array.isArray(r?.pages) ? r.pages.filter(Number.isFinite).slice(0, 2) : null,
+		snippet: text(r?.snippet, 400),
+	});
+	const guideOf = (g) => (g && Array.isArray(g.outline) ? {
+		overview: text(g.overview, 4000),
+		outline: g.outline.slice(0, 20).map((o) => ({
+			name: text(o?.name, 200), expect: text(o?.expect, 1000), skip: text(o?.skip, 500),
+			formulas: list(o?.formulas).slice(0, 12).map((f) => text(f, 300)),
+			read: list(o?.read).slice(0, 8).map((r) => ({ book: text(r?.book, 200), where: text(r?.where, 120), focus: text(r?.focus, 300), page: Number.isFinite(r?.page) ? r.page : null })),
+		})),
+		exam: text(g.exam, 1500),
+		plan: list(g.plan).slice(0, 12).map((x) => text(x, 300)),
+		checklist: list(g.checklist).slice(0, 15).map((x) => text(x, 300)),
+	} : null);
+
+	/** A topic's study path from Crux: its guide (if made), the pages to read, worked examples, the unit's books. */
+	async function learn(unit, topicId) {
+		if (!UNIT.test(String(unit)) || !ID.test(String(topicId))) throw new CruxError("bad-request", "Pick a unit and a topic.");
+		const p = await api(`/api/learn?unit=${encodeURIComponent(unit)}&topicId=${encodeURIComponent(topicId)}`);
+		const refs = (v) => list(v).slice(0, 6).map(refOf).filter((r) => /^\d+$/.test(r.fileId));
+		return {
+			guide: guideOf(p?.guide),
+			read: refs(p?.read), examples: refs(p?.examples),
+			books: list(p?.books).filter((b) => b && /^\d+$/.test(String(b.id))).map((b) => ({ id: String(b.id), name: String(b.name ?? "") })),
+		};
+	}
+
+	/** Make (or remake) the topic's study guide. One AI action on the student's Crux plan. */
+	async function makeGuide(unit, topicId, fresh) {
+		if (!UNIT.test(String(unit)) || !ID.test(String(topicId))) throw new CruxError("bad-request", "Pick a unit and a topic.");
+		const g = await api("/api/learn/guide", "POST", { unit, topicId, fresh: fresh === true });
+		if (g?.needAi) throw new CruxError("failed", typeof g.message === "string" ? g.message : "Crux has no AI available for this right now.");
+		const guide = guideOf(g);
+		if (!guide) throw new CruxError("failed", "Crux did not send a study guide back. Try again.");
+		return guide;
+	}
+
+	// "Open in book · p. 112": the hub file, downloaded once, in a reader window at that page.
+	// PDFs open in Chromium's own viewer inside Crux; anything else in the computer's own app.
+	const readers = new Map();
+	async function openAt(unit, id, name, page) {
+		if (!UNIT.test(String(unit))) throw new CruxError("bad-request", "That file can't be opened.");
+		const file = await download(unit, id, name);
+		const at = Number.isInteger(page) && page > 0 && page < 100000 ? page : null;
+		if (!/\.pdf$/i.test(file.path)) {
+			const problem = await shell.openPath(file.path);
+			if (problem) throw new CruxError("failed", `The file could not be opened: ${problem}`);
+			return { path: file.path, left: file.left };
+		}
+		const url = `${pathToFileURL(file.path).href}${at ? `#page=${at}` : ""}`;
+		const existing = readers.get(file.path);
+		if (existing && !existing.isDestroyed()) {
+			void existing.loadURL(url).catch(() => {});
+			existing.focus();
+			return { path: file.path, left: file.left };
+		}
+		const win = new BrowserWindow({
+			width: 1000, height: 900, title: path.basename(file.path), autoHideMenuBar: true, backgroundColor: "#120e0c",
+			webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false, plugins: true, partition: "crux-reader" },
+		});
+		readers.set(file.path, win);
+		win.on("closed", () => readers.delete(file.path));
+		// The reader shows this one file: links in it open in the browser, nothing else loads here.
+		const home = url.split("#")[0];
+		win.webContents.on("will-navigate", (event, target) => {
+			if (String(target).split("#")[0] === home) return;
+			event.preventDefault();
+			if (/^https:\/\//i.test(String(target))) void shell.openExternal(target).catch(() => {});
+		});
+		win.webContents.setWindowOpenHandler(({ url: target }) => {
+			if (/^https:\/\//i.test(target)) void shell.openExternal(target).catch(() => {});
+			return { action: "deny" };
+		});
+		void win.loadURL(url).catch((err) => log(`crux reader: ${err?.message ?? err}`));
+		return { path: file.path, left: file.left };
+	}
+
+	return { status, login, logout, units, files, download, reveal, hubRoot, study, catalog, saveSetup, skipSetup, addNote, removeNote, learn, makeGuide, openAt };
 }
 
 /** Renderer commands. The caller has already checked the sender is the trusted app window. */
@@ -284,6 +452,15 @@ async function cruxControl(command, hub, parentWindow) {
 			case "files": return { ok: true, value: await hub.files(command.unit) };
 			case "download": return { ok: true, value: await hub.download(command.unit, command.id, command.name) };
 			case "reveal": return { ok: true, value: hub.reveal(command.path) };
+			case "study": return { ok: true, value: await hub.study() };
+			case "catalog": return { ok: true, value: await hub.catalog(command.course, command.year) };
+			case "saveSetup": return { ok: true, value: await hub.saveSetup(command.setup) };
+			case "skipSetup": return { ok: true, value: hub.skipSetup() };
+			case "addNote": return { ok: true, value: await hub.addNote(command.note) };
+			case "removeNote": return { ok: true, value: await hub.removeNote(command.id) };
+			case "learn": return { ok: true, value: await hub.learn(command.unit, command.topicId) };
+			case "makeGuide": return { ok: true, value: await hub.makeGuide(command.unit, command.topicId, command.fresh) };
+			case "openAt": return { ok: true, value: await hub.openAt(command.unit, command.id, command.name, command.page) };
 		}
 	} catch (err) {
 		// Errors cross IPC as data so the renderer can show the reason and react to the code.

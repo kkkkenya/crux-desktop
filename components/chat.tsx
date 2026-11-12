@@ -52,7 +52,8 @@ import { PlanBlock, PlanPopup, latestTree } from "@/components/plan-block";
 import { PlanMarginalia, planExists } from "@/components/plan-window";
 import { MermaidOverlay, SessionMermaidContext } from "@/components/session-overlay";
 import { AbortTurnDialog, type AbortMode } from "@/components/abort-turn-dialog";
-import { ArrowRightIcon, DumbbellIcon, WaypointsIcon } from "lucide-react";
+import { ArrowRightIcon, DumbbellIcon, NotebookPenIcon, WaypointsIcon } from "lucide-react";
+import { CruxNotesPanel, useNotesOpen } from "@/components/crux-study";
 import type { PlanBlockData } from "@/src/core";
 import type { SourceDocumentRef } from "@/src/core";
 import { SourceDocumentsChips } from "@/components/session-documents";
@@ -897,6 +898,8 @@ export function Chat({
 	// The live plan popup (wave 4): opened by any transcript plan block, the
 	// top-bar plan chip, and the dock band's marginalia.
 	const [planOpen, setPlanOpen] = useState(false);
+	// Crux: the notes column beside the session (study guide, pinned text).
+	const [notesOpen, setNotesOpen] = useNotesOpen();
 	// Real plan presence — gates the marginalia's clickable flank. A JSX
 	// element is always truthy; gating on the node alone mounted a phantom
 	// (invisible, clickable) button in the bottom-right whenever a question
@@ -1388,6 +1391,19 @@ export function Chat({
 						</button>
 </Hint>
 					)}
+					{/* Crux: the notes column (pinned clips, notes, the study guide). */}
+					<Hint label={notesOpen ? "Close notes" : "Notes and study guide"} side="bottom">
+						<button
+							type="button"
+							data-testid="notes-chip"
+							aria-pressed={notesOpen}
+							onClick={(e) => { blurAfterPointerClick(e); setNotesOpen(!notesOpen); }}
+							className="lh-no-drag flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-border/80 px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:border-border hover:text-foreground aria-pressed:border-primary/60 aria-pressed:text-foreground"
+						>
+							<NotebookPenIcon className="size-3.5 text-primary" aria-hidden />
+							Notes
+						</button>
+					</Hint>
 					{/* Source documents (issue #175): read-only chips naming the
 					    documents this session was created from (hover shows the
 					    staged converted copy's path). Teach sessions only — the
@@ -1816,6 +1832,7 @@ export function Chat({
 				<AbortTurnDialog mode={abortAsk} onClose={() => setAbortAsk(null)} onConfirm={confirmAbort} busy={busy} />
 				</div>
 			</div>
+			{notesOpen && <CruxNotesPanel chatId={chatId} title={titleText} onClose={() => setNotesOpen(false)} />}
 		</div>
 		</JobsContext.Provider>
 		</SessionMermaidContext.Provider>
