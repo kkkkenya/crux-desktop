@@ -7,6 +7,7 @@ import { directoryReferencePath, quoteFilePath } from "@/src/core";
 import { Hint } from "@/components/ui/hint";
 import { INSERT_FILE_PATHS_EVENT } from "@/components/path-input";
 import { BROWSER_NOTICE } from "@/components/file-path-drop-zone";
+import { HubDialog } from "@/components/crux-hub";
 
 /** Picked files → the rooted paths an editor chips (issue #285), via the
  *  desktop bridge. Same validity rule as drops: a file without a usable
@@ -62,6 +63,7 @@ export function AttachFilesButton({ editorRef }: { editorRef: React.RefObject<HT
 	const popupRef = useRef<HTMLDivElement>(null);
 	const choosingFolder = useRef(false);
 	const [open, setOpen] = useState(false);
+	const [hub, setHub] = useState(false); // Crux: Hub files, attached like a picked file
 	const [notice, setNotice] = useState("");
 	const [placement, setPlacement] = useState<ReturnType<typeof attachmentPopupPlacement> | null>(null);
 	const positioned = placement !== null;
@@ -163,8 +165,11 @@ export function AttachFilesButton({ editorRef }: { editorRef: React.RefObject<HT
 						onClick={() => { setOpen(false); pickerRef.current?.click(); }}>Files</button>
 					<button type="button" role="menuitem" className="block w-full rounded px-2 py-1 text-left text-xs hover:bg-accent"
 						onClick={() => { void chooseFolder(); }}>Folder</button>
+					<button type="button" role="menuitem" className="block w-full rounded px-2 py-1 text-left text-xs hover:bg-accent" data-testid="attach-from-hub"
+						onClick={() => { setOpen(false); setHub(true); }}>From the Hub</button>
 				</> : notice}
 			</div>, document.body)}
+			{hub && <HubDialog bridge={typeof window === "undefined" ? undefined : window.lh?.crux} onClose={() => setHub(false)} />}
 		</div>
 	);
 }

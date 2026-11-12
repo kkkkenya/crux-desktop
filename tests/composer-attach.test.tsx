@@ -162,7 +162,7 @@ describe("composer attach button", () => {
 		f.caret(4);
 		await act(async () => { f.button.click(); });
 		assert.equal(f.pickerClicks, 0);
-		assert.deepEqual(Array.from(f.doc.querySelectorAll('[role="menuitem"]')).map((item) => item.textContent), ["Files", "Folder"]);
+		assert.deepEqual(Array.from(f.doc.querySelectorAll('[role="menuitem"]')).map((item) => item.textContent), ["Files", "Folder", "From the Hub"]);
 		await f.choice("Files");
 		assert.equal(f.pickerClicks, 1);
 		const paths = ["/course/week 3.pdf", "/photos/board.jpg"];
@@ -236,9 +236,11 @@ describe("composer attach button", () => {
 		assert.equal((await f.key("ArrowDown")).defaultPrevented, true);
 		assert.equal(f.doc.activeElement!.textContent, "Folder");
 		await f.key("ArrowDown");
-		assert.equal(f.doc.activeElement!.textContent, "Files");
+		assert.equal(f.doc.activeElement!.textContent, "From the Hub");
+		await f.key("ArrowDown");
+		assert.equal(f.doc.activeElement!.textContent, "Files", "wraps around");
 		await f.key("End");
-		assert.equal(f.doc.activeElement!.textContent, "Folder");
+		assert.equal(f.doc.activeElement!.textContent, "From the Hub");
 		await f.key("Home");
 		assert.equal(f.doc.activeElement!.textContent, "Files");
 		assert.equal((await f.key("Escape")).defaultPrevented, true);

@@ -54,7 +54,7 @@ if (running()) {
 
 // robocopy /MIR copies only what changed and removes what is gone. Exit codes below 8 are success.
 console.log("crux-update: copying the changed files in…");
-const copy = spawnSync("robocopy", [source, target, "/MIR", "/NFL", "/NDL", "/NJH", "/NJS", "/NP", "/R:2", "/W:1"], { stdio: "inherit" });
+const copy = spawnSync("robocopy", [source, target, "/MIR", "/NFL", "/NDL", "/NJH", "/NJS", "/NP", "/R:2", "/W:1"], { stdio: ["ignore", "ignore", "inherit"] });
 if (copy.status === null || copy.status >= 8) fail(`copy failed (robocopy ${copy.status})`);
 
 // Start it again and wait for the window.
