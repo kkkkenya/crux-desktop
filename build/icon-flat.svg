@@ -1,13 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <!-- Crux app icon: the Hub tile. Source for build/icon.ico and build/icon.png (node scripts/make-icons.mjs). -->
-  <rect x="4" y="4" width="120" height="120" rx="28" fill="#f2c200" stroke="#0b0f14" stroke-opacity="0.15" stroke-width="4"/>
-  <g fill="#0b0f14">
-    <rect x="25" y="38" width="12" height="42"/>
-    <rect x="25" y="38" width="35" height="10"/>
-    <rect x="25" y="54" width="32" height="10"/>
-    <rect x="25" y="70" width="35" height="10"/>
-    <rect x="66" y="38" width="12" height="42"/>
-    <rect x="91" y="38" width="12" height="42"/>
-    <rect x="66" y="54" width="37" height="10"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Crux app icon: the Southern Cross. Five stars, two lines, Hub yellow on warm black.
+       Source for build/icon.ico and build/icon.png (node scripts/make-icons.mjs). -->
+  <rect width="1024" height="1024" rx="228" fill="#120e0c"/>
+  <g stroke="#f2c200" stroke-opacity="0.45" stroke-width="12" stroke-linecap="round">
+    <line x1="494" y1="212" x2="567" y2="811"/>
+    <line x1="251" y1="512" x2="802" y2="399"/>
+  </g>
+  <g fill="#f2c200">
+    <circle cx="494" cy="212" r="36"/>
+    <circle cx="251" cy="512" r="44"/>
+    <circle cx="802" cy="399" r="34"/>
+    <circle cx="567" cy="811" r="58"/>
+    <circle cx="668" cy="575" r="14"/>
   </g>
 </svg>

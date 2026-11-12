@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Crux app icon: the Southern Cross. Five stars, two lines, ink on paper (light version).
+       Source for build/icon.ico and build/icon.png (node scripts/make-icons.mjs). -->
+  <rect width="1024" height="1024" rx="228" fill="#f4efe9"/>
+  <g stroke="#16171b" stroke-opacity="0.45" stroke-width="12" stroke-linecap="round">
+    <line x1="494" y1="212" x2="567" y2="811"/>
+    <line x1="251" y1="512" x2="802" y2="399"/>
+  </g>
+  <g fill="#16171b">
+    <circle cx="494" cy="212" r="36"/>
+    <circle cx="251" cy="512" r="44"/>
+    <circle cx="802" cy="399" r="34"/>
+    <circle cx="567" cy="811" r="58"/>
+    <circle cx="668" cy="575" r="14"/>
+  </g>
+</svg>
