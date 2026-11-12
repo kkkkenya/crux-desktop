@@ -77,6 +77,46 @@ for (const extra of ["dist", path.join("node_modules", "electron")]) {
 	}
 }
 
+// 2d) Nested externals (Crux, 2026-11-12): Next links each external package into
+// .next/node_modules/<name>-<hash>. When the real package lives NESTED (for example
+// node_modules/@streamdown/code/node_modules/shiki), its dependencies sit beside it in
+// that nested node_modules. On Windows the packager copies the link as a plain folder,
+// so the copy can no longer see those neighbours and the packaged server answers 500
+// ("Cannot find package '@shikijs/core'"), while the in-repo smoke test still passes.
+// Copy the neighbours to the payload's top-level node_modules, where every copy can
+// resolve them. Never overwrite a package that is already there.
+function hoistNestedNeighbours() {
+	const linkRoot = path.join(STANDALONE, ".next", "node_modules");
+	if (!exists(linkRoot)) return;
+	const top = path.join(STANDALONE, "node_modules");
+	const links = [];
+	for (const entry of fs.readdirSync(linkRoot, { withFileTypes: true })) {
+		const full = path.join(linkRoot, entry.name);
+		if (entry.isSymbolicLink()) links.push(full);
+		else if (entry.isDirectory() && entry.name.startsWith("@")) {
+			for (const scoped of fs.readdirSync(full, { withFileTypes: true })) if (scoped.isSymbolicLink()) links.push(path.join(full, scoped.name));
+		}
+	}
+	const packagesIn = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+		!e.isDirectory() || e.name.startsWith(".") ? []
+			: e.name.startsWith("@") ? fs.readdirSync(path.join(dir, e.name)).map((n) => path.join(e.name, n))
+				: [e.name]);
+	for (const link of links) {
+		const real = fs.realpathSync(link);
+		// .../node_modules/<pkg> or .../node_modules/@scope/<pkg>
+		let nested = path.dirname(real);
+		if (path.basename(nested).startsWith("@")) nested = path.dirname(nested);
+		if (path.basename(nested) !== "node_modules" || path.resolve(nested) === path.resolve(top)) continue;
+		for (const name of packagesIn(nested)) {
+			const target = path.join(top, name);
+			if (exists(target)) continue;
+			fs.cpSync(path.join(nested, name), target, { recursive: true, dereference: true });
+			console.log(`[build-server] hoisted nested dependency: ${name.split(path.sep).join("/")}`);
+		}
+	}
+}
+hoistNestedNeighbours();
+
 // 3) Sanity: the runtime-read prompt assets must be present (the teacher
 //    agent reads them from disk at request time).
 for (const asset of [
