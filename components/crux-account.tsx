@@ -17,7 +17,7 @@ import { LhMark } from "@/components/lh-mark";
 import { Button } from "@/components/ui/button";
 
 export type CruxTier = "trial" | "basic" | "premium" | "vvip" | "owner";
-export interface CruxAccount { name: string; tier: CruxTier; offline: boolean }
+export interface CruxAccount { name: string; tier: CruxTier; offline: boolean; avatar: string | null }
 
 const TIERS: readonly CruxTier[] = ["trial", "basic", "premium", "vvip", "owner"];
 export const TIER_NAME: Record<CruxTier, string> = { trial: "Trial", basic: "Basic", premium: "Premium", vvip: "VVIP", owner: "Owner" };
@@ -29,7 +29,9 @@ export function accountFrom(status: CruxStatus & { offline?: boolean }): CruxAcc
 	if (!status.signedIn) return null;
 	const tier = TIERS.includes(status.tier as CruxTier) ? (status.tier as CruxTier) : null;
 	if (!tier) return null; // a plan this build doesn't know is not a way in
-	return { name: status.name || "", tier, offline: status.offline === true };
+	// Only Discord's own picture host: the rail shows it as an image.
+	const avatar = typeof status.avatar === "string" && status.avatar.startsWith("https://cdn.discordapp.com/") ? status.avatar : null;
+	return { name: status.name || "", tier, offline: status.offline === true, avatar };
 }
 
 const AccountContext = createContext<{ account: CruxAccount | null; signOut: () => Promise<void> }>({ account: null, signOut: async () => {} });
@@ -109,7 +111,7 @@ export function CruxAccountGate({ children }: { children: React.ReactNode }) {
 	}, [bridge]);
 
 	const account = useMemo<CruxAccount | null>(() => {
-		if (bridge === null) return { name: "", tier: "owner", offline: false }; // browser development: no gate
+		if (bridge === null) return { name: "", tier: "owner", offline: false, avatar: null }; // browser development: no gate
 		return status ? accountFrom(status) : null;
 	}, [bridge, status]);
 	const value = useMemo(() => ({ account, signOut }), [account, signOut]);

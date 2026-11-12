@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 export type CruxReply<T> = { ok: true; value: T } | { ok: false; code: string; error: string; resetsAt?: string | null };
-export interface CruxStatus { signedIn: boolean; name?: string; tier?: string; problem?: string; offline?: boolean }
+export interface CruxStatus { signedIn: boolean; name?: string; tier?: string; avatar?: string; problem?: string; offline?: boolean }
 export interface CruxUnit { code: string; title: string }
 export interface CruxFile { id: string; name: string; paper: boolean; pages: number | null; path: string | null }
 /** The preload bridge (electron/preload.cjs → electron/crux-hub.cjs). Desktop only. */

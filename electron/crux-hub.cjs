@@ -59,7 +59,8 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 		try {
 			const saved = JSON.parse(fs.readFileSync(accountFile(), "utf8"));
 			if (typeof saved?.at !== "number" || Date.now() - saved.at > OFFLINE_GRACE_MS || saved.at > Date.now()) return null;
-			return { signedIn: true, name: String(saved.name ?? ""), tier: String(saved.tier ?? ""), offline: true };
+			const pic = typeof saved.avatar === "string" && saved.avatar.startsWith("https://cdn.discordapp.com/") ? { avatar: saved.avatar } : {};
+			return { signedIn: true, name: String(saved.name ?? ""), tier: String(saved.tier ?? ""), ...pic, offline: true };
 		} catch { return null; }
 	};
 
@@ -89,7 +90,9 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 		try {
 			const me = await api("/api/me");
 			const account = { signedIn: true, name: String(me.name ?? ""), tier: String(me.tier ?? "") };
-			remember({ name: account.name, tier: account.tier });
+			// The Discord picture, for the rail; only from Discord's own image host.
+			if (typeof me.avatar === "string" && me.avatar.startsWith("https://cdn.discordapp.com/")) account.avatar = me.avatar;
+			remember({ name: account.name, tier: account.tier, ...(account.avatar ? { avatar: account.avatar } : {}) });
 			return account;
 		} catch (err) {
 			if (err instanceof CruxError && err.code === "signed-out") { forget(); return { signedIn: false }; }

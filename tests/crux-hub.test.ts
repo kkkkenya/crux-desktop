@@ -60,6 +60,11 @@ afterEach(() => {
 it("status: signed in with a name and tier, signed out on 401, and a plain reason when the account has no plan", async () => {
 	routes["/api/me"] = { status: 200, body: { id: "1", name: "Wanjiru", tier: "premium" } };
 	assert.deepEqual(await hub().status(), { signedIn: true, name: "Wanjiru", tier: "premium" });
+	const pic = "https://cdn.discordapp.com/avatars/1/abc.png?size=96";
+	routes["/api/me"] = { status: 200, body: { id: "1", name: "Wanjiru", tier: "premium", avatar: pic } };
+	assert.deepEqual(await hub().status(), { signedIn: true, name: "Wanjiru", tier: "premium", avatar: pic }, "the Discord picture comes along");
+	routes["/api/me"] = { status: 200, body: { id: "1", name: "Wanjiru", tier: "premium", avatar: "https://evil.example/x.png" } };
+	assert.equal((await hub().status()).avatar, undefined, "a picture from anywhere else is dropped");
 
 	routes["/api/me"] = { status: 401, body: { error: "Sign in first." } };
 	assert.deepEqual(await hub().status(), { signedIn: false });

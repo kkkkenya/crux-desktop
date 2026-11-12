@@ -231,7 +231,7 @@ export function CruxRail({ sessionsOpen, onToggleSessions, onOpenSettings }: { s
 						className="crux-rail-avatar"
 						data-testid="rail-account"
 					>
-						{initial}
+						{account.avatar ? <img src={account.avatar} alt="" className="size-full rounded-full object-cover" referrerPolicy="no-referrer" /> : initial}
 					</button>
 					{menu && (
 						<div className="crux-glass absolute bottom-0 left-12 z-50 w-56 rounded-xl p-3 text-sm" role="menu">

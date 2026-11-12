@@ -42,7 +42,7 @@ const ELECTRON_MODE = process.argv.includes("--electron");
 const RUNTIME = ELECTRON_MODE ? createRequire(import.meta.url)("electron") : process.execPath;
 
 const POLL_MS = 500;
-const BOOT_TIMEOUT_MS = 30_000;
+const BOOT_TIMEOUT_MS = 90_000; // a busy laptop takes about 30 s to boot the server
 /** GET-only probes — the routes that exercised today's failure class. */
 const PROBES = ["/api/graph", "/api/models", "/api/settings"];
 

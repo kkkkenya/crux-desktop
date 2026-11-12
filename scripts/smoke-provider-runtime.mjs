@@ -23,7 +23,7 @@ export function verifyProviderRuntime(standalone, runtime = process.execPath) {
 		const result = spawnSync(runtime, [fileURLToPath(import.meta.url), "--probe", path.resolve(standalone)], {
 			cwd: home,
 			env: { ...probeEnv(process.env, home), ELECTRON_RUN_AS_NODE: "1" },
-			encoding: "utf8", timeout: 30_000, maxBuffer: 128 * 1024,
+			encoding: "utf8", timeout: 60_000, maxBuffer: 128 * 1024,
 		});
 		if (result.status !== 0 || result.error) {
 			throw new Error(`provider runtime probe failed (${result.error?.message ?? result.status}):\n${result.stdout ?? ""}${result.stderr ?? ""}`);

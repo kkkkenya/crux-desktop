@@ -699,6 +699,7 @@ body {
 .crux-rail-sep { width: 24px; height: 1px; margin: 6px 0; background: var(--border); }
 .crux-rail-avatar {
 	display: flex;
+	overflow: hidden;
 	align-items: center;
 	justify-content: center;
 	width: 36px;
