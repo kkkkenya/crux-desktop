@@ -51,6 +51,7 @@ import type { EffectiveModelSpec, EffectiveSlot } from "../core/settings-resolut
 import { AUTH_PROVIDER_KEYS, CUSTOM_PROVIDER, isCustomProviderId } from "../core/auth-keys.ts";
 import { claudeCodeAvailable } from "./claude-code-config.ts";
 import { CLAUDE_CODE_PROVIDER } from "../agent/claude-code/constants.ts";
+import { CRUX_HOSTED_PROVIDER, cruxHostedReady, refreshCruxHosted } from "../agent/crux-hosted.ts";
 import {
 	BACKGROUND_MODEL_ROLES,
 	COMPACTION_THRESHOLD_FLOOR,
@@ -155,6 +156,8 @@ export function catalogProviders(): CatalogProvider[] {
 	})).concat([
 		{ id: "chatgpt", envVar: "", keyPresent: chatGPTConnected() },
 		{ id: CLAUDE_CODE_PROVIDER, envVar: "", keyPresent: claudeCodeAvailable() },
+		// Crux hosted models: the student's plan, through the Crux relay (desktop only).
+		{ id: CRUX_HOSTED_PROVIDER, envVar: "", keyPresent: cruxHostedReady() },
 		...NATIVE_SUBSCRIPTIONS.map((p) => ({ id: p.logicalId, envVar: "", keyPresent: nativeSubscriptionConnected(p.providerId) })),
 		// Custom endpoints: a row only when usable (base URL set). keyPresent
 		// reflects usability, not key presence (keyless local servers are allowed).
@@ -236,6 +239,8 @@ export function catalogContextLimits(): Map<string, number> {
  *  defaults a settings-less chat runs + the background roles' resolved
  *  pins (the settings UI's per-role default captions). */
 export function modelCatalog(): ModelCatalogResponse {
+	// Crux hosted models: fetch the plan's list in the background (every 10 minutes at most).
+	void refreshCruxHosted();
 	const keyed = keyedProviderIds();
 	const windows = effectiveSettings().compaction.contextWindows;
 	const providers = piModels().getProviders().filter((p) => keyed.has(p.id));

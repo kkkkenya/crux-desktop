@@ -343,14 +343,18 @@ describe("pi thinking truth (pinned against pi-ai upgrades)", () => {
  *  finds a claude binary when installed is true. */
 function withClaudeInstalled(installed: boolean, fn: () => void, enabled = true): void {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "claude-catalog-"));
-	const saved = { PATH: process.env.PATH, HOME: process.env.HOME, npm_config_prefix: process.env.npm_config_prefix };
+	const saved = { PATH: process.env.PATH, HOME: process.env.HOME, APPDATA: process.env.APPDATA, npm_config_prefix: process.env.npm_config_prefix };
 	const settings = readSettings();
 	writeSettings({ ...(settings ?? { version: 1 }), claudeCode: { enabled } });
 
 	if (installed) fs.writeFileSync(path.join(dir, "claude"), "#!/bin/sh\n", { mode: 0o755 });
+	// Windows runs only claude.exe (src/agent/claude-code/binary.ts).
+	if (installed && process.platform === "win32") fs.writeFileSync(path.join(dir, "claude.exe"), "");
 	process.env.PATH = dir;
 	process.env.HOME = dir;
 	delete process.env.npm_config_prefix;
+	// The npm global folder is found through APPDATA on Windows: point it here too.
+	process.env.APPDATA = dir;
 
 	try {
 		fn();

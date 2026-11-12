@@ -54,6 +54,8 @@ import { MermaidOverlay, SessionMermaidContext } from "@/components/session-over
 import { AbortTurnDialog, type AbortMode } from "@/components/abort-turn-dialog";
 import { ArrowRightIcon, DumbbellIcon, NotebookPenIcon, WaypointsIcon } from "lucide-react";
 import { CruxNotesPanel, useNotesOpen } from "@/components/crux-study";
+// Mirrors src/agent/crux-hosted.ts (server code is not imported into the page).
+const CRUX_BUSY_MARK = "[crux:gemini-busy]";
 import type { PlanBlockData } from "@/src/core";
 import type { SourceDocumentRef } from "@/src/core";
 import { SourceDocumentsChips } from "@/components/session-documents";
@@ -900,6 +902,11 @@ export function Chat({
 	const [planOpen, setPlanOpen] = useState(false);
 	// Crux: the notes column beside the session (study guide, pinned text).
 	const [notesOpen, setNotesOpen] = useNotesOpen();
+	// Crux hosted models: Gemini was busy, so switch this session to DeepSeek and send the answer again.
+	const switchToCruxFallback = async () => {
+		const res = await fetch(`/api/chats/${chatId}/settings`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: { provider: "crux", id: "deepseek-flash" } }) }).catch(() => null);
+		if (res?.ok) retryFailedTurn();
+	};
 	// Real plan presence — gates the marginalia's clickable flank. A JSX
 	// element is always truthy; gating on the node alone mounted a phantom
 	// (invisible, clickable) button in the bottom-right whenever a question
@@ -1705,8 +1712,14 @@ export function Chat({
 							{openingError && <p role="alert" className="text-sm text-destructive">{OPENING_PROMPT_FAILURE}</p>}
 							{error && (
 								<div className="flex items-center justify-between gap-3 rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm">
-									<span>Something went wrong: {error.message}</span>
-									{retryable && (
+									<span>Something went wrong: {error.message.replace(CRUX_BUSY_MARK, "").replace(/\s{2,}/g, " ")}</span>
+									{/* Crux hosted models: Gemini was busy twice, so the plan opens DeepSeek for 30 minutes. */}
+									{error.message.includes(CRUX_BUSY_MARK) && (
+										<Button size="xs" data-testid="crux-use-deepseek" onClick={() => void switchToCruxFallback()}>
+											Use DeepSeek and retry
+										</Button>
+									)}
+									{retryable && !error.message.includes(CRUX_BUSY_MARK) && (
 										<Button variant="outline" size="xs" data-testid="retry-failed-turn" onClick={retryFailedTurn}>
 											Retry
 										</Button>

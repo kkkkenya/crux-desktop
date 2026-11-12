@@ -192,6 +192,7 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 		if (signInWindow && !signInWindow.isDestroyed()) signInWindow.close();
 		await ses().clearStorageData();
 		forget();
+		aiKey = null; // the hosted-models key belongs to the account that signed out
 		return { signedIn: false };
 	}
 
@@ -522,13 +523,23 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 		const current = app.getVersion();
 		return { available: newerVersion(version, current), version, current, url, notes: text(latest.notes, 300) };
 	}
+	// The relay key for hosted models (study/server/ai-relay.js): 12 hours, fetched again 10 minutes before it ends.
+	let aiKey = null;
+	async function aiToken() {
+		if (aiKey && aiKey.exp - Date.now() > 10 * 60 * 1000) return { token: aiKey.token, exp: aiKey.exp };
+		const r = await api("/api/ai/token");
+		if (typeof r?.token !== "string" || !Number.isFinite(r?.exp)) throw new CruxError("failed", "Crux did not send a key for hosted models.");
+		aiKey = { token: r.token, exp: r.exp };
+		return { token: aiKey.token, exp: aiKey.exp };
+	}
+
 	async function openUpdate(url) {
 		if (typeof url !== "string" || !url.startsWith(RELEASES)) throw new CruxError("bad-request", "That download link isn't a Crux release.");
 		await shell.openExternal(url);
 		return true;
 	}
 
-	return { status, login, logout, units, files, download, reveal, hubRoot, study, catalog, saveSetup, skipSetup, addNote, removeNote, learn, makeGuide, openAt, uploads, contributors, share, updateCheck, openUpdate };
+	return { status, login, logout, units, files, download, reveal, hubRoot, study, catalog, saveSetup, skipSetup, addNote, removeNote, learn, makeGuide, openAt, uploads, contributors, share, updateCheck, openUpdate, aiToken };
 }
 
 /** Renderer commands. The caller has already checked the sender is the trusted app window. */
@@ -583,6 +594,11 @@ function attachCruxChild(child, getHub) {
 		else if (op === "units") reply = await cruxControl({ op: "units" }, hub, null);
 		else if (op === "files") reply = await cruxControl({ op: "files", unit: message.unit }, hub, null);
 		else if (op === "download") reply = await cruxControl({ op: "download", unit: message.unit, id: message.fileId, name: message.name }, hub, null);
+		// The relay key goes to the local server only, never to the window.
+		else if (op === "aiToken") {
+			try { reply = { ok: true, value: await hub.aiToken() }; }
+			catch (err) { reply = { ok: false, code: err?.code ?? "failed", error: err?.code ? err.message : "Crux could not give a key for hosted models." }; }
+		}
 		else reply = { ok: false, code: "bad-request", error: "Unknown request." };
 		send({ channel: "lh:crux", id, op, ...reply });
 	};

@@ -19,6 +19,7 @@ import { chatGPTModel } from "./chatgpt-bridge.ts";
 import { chatGPTStream } from "./chatgpt-stream.ts";
 import type { ChatGPTDispatchLifecycle } from "./chatgpt-request-cycle.ts";
 import { createClaudeCodeProvider } from "./claude-code/provider.ts";
+import { cruxHostedFingerprint, cruxHostedProvider, CRUX_HOSTED_PROVIDER } from "./crux-hosted.ts";
 import { streamClaudeCode } from "./claude-code/stream.ts";
 import { nativeSubscriptionId, nativeSubscriptionModel } from "./subscription-bridge.ts";
 import { nativeSubscriptionStream } from "./subscription-stream.ts";
@@ -80,6 +81,7 @@ export function configureProviderSource(source: ProviderSource): void {
  *  a provider with no key simply fails its stream with "not configured" —
  *  honest, late, and unreachable through the picker, which gates on
  *  keyPresent. */
+let cruxPublished = "";
 export function piModels() {
 	if (!collection) {
 		collection = createModels({ identity: APP_IDENTITY });
@@ -94,6 +96,14 @@ export function piModels() {
 		collection.setProvider(createClaudeCodeProvider(streamClaudeCode));
 	}
 	providerSource?.sync(collection);
+	// Crux hosted models (desktop only): published when the plan's list changes. The list itself is
+	// refreshed when the picker asks for the catalog (src/server/model-catalog.ts), never from here.
+	const crux = cruxHostedFingerprint();
+	if (crux !== cruxPublished) {
+		const provider = cruxHostedProvider();
+		if (provider) collection.setProvider(provider); else collection.deleteProvider(CRUX_HOSTED_PROVIDER);
+		cruxPublished = crux;
+	}
 	return collection;
 }
 

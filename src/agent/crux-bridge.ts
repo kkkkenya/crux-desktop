@@ -39,7 +39,7 @@ export function createCruxBridge(port: Port) {
 				: { ok: false, code: String(message.code ?? "failed"), error: String(message.error ?? "Crux did not answer.") });
 		});
 	};
-	return function cruxRequest<T>(op: "units" | "files" | "download", fields: Record<string, unknown> = {}): Promise<CruxBridgeReply<T>> {
+	return function cruxRequest<T>(op: "units" | "files" | "download" | "aiToken", fields: Record<string, unknown> = {}): Promise<CruxBridgeReply<T>> {
 		if (!port.connected()) return Promise.resolve({ ok: false, code: "no-desktop", error: "Hub files are available only in the Crux desktop app." });
 		listen();
 		return new Promise((resolve) => {
@@ -57,7 +57,7 @@ export function createCruxBridge(port: Port) {
 }
 
 /** The one bridge for this server process. */
-export function cruxRequest<T>(op: "units" | "files" | "download", fields: Record<string, unknown> = {}): Promise<CruxBridgeReply<T>> {
+export function cruxRequest<T>(op: "units" | "files" | "download" | "aiToken", fields: Record<string, unknown> = {}): Promise<CruxBridgeReply<T>> {
 	const global = globalThis as typeof globalThis & { [KEY]?: ReturnType<typeof createCruxBridge> };
 	global[KEY] ??= createCruxBridge(processPort());
 	return global[KEY]<T>(op, fields);
