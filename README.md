@@ -1,3 +1,17 @@
+# Crux desktop
+
+Crux is the Engineering Study Hub's tutor for Windows. It teaches a unit one step at a time, from your own notes and the Hub's past papers. You sign in with the Discord account you use in the Hub.
+
+- **Download:** [Crux for Windows](https://github.com/kkkkenya/crux-desktop/releases/latest/download/Crux-Setup.exe), or the [releases page](https://github.com/kkkkenya/crux-desktop/releases). Windows 10 or 11, 64-bit.
+- **Crux on the web and on phones:** [crux.engineeringhub.site](https://crux.engineeringhub.site).
+- **What changed in each version:** [docs/crux/versions](docs/crux/versions).
+
+Crux desktop is built on [LearnHarness](https://github.com/amosblomqvist/learnharness) by Amos Blomqvist and its contributors, and keeps its licence, the GNU AGPL v3 (see [LICENSE](LICENSE)). The Crux changes live on the `crux` branch. Everything below this section is LearnHarness's own README.
+
+To build the Windows installer: `npm ci`, then `npm run build && node scripts/build-server.mjs && node scripts/smoke-server.mjs --electron && npx electron-builder --win --x64 --publish never`. The installer lands in `dist/`.
+
+---
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/lh_banner_dark.png">

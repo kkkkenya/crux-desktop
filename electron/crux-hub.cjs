@@ -31,6 +31,8 @@ const OPS = new Set([
 	"study", "catalog", "saveSetup", "skipSetup", "addNote", "removeNote", "learn", "makeGuide", "openAt",
 	// Sharing a file with the class, and the contributor board.
 	"uploads", "contributors", "share",
+	// The new-version notice.
+	"updateCheck", "openUpdate",
 ]);
 const ID = /^[\w-]{1,40}$/;
 const UNIT = /^[A-Z]{2,5} ?\d{3}[A-Z]?$/;
@@ -43,6 +45,13 @@ class CruxError extends Error {
 		this.code = code;
 		this.extra = extra;
 	}
+}
+
+/** Whether release version a (x.y.z) is newer than b. */
+function newerVersion(a, b) {
+	const pa = String(a).split(".").map(Number), pb = String(b).split(".").map(Number);
+	for (let i = 0; i < 3; i++) { if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0); }
+	return false;
 }
 
 /** A name that is safe as one path segment on Windows, macOS and Linux. */
@@ -494,7 +503,32 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 		return uploads(unit);
 	}
 
-	return { status, login, logout, units, files, download, reveal, hubRoot, study, catalog, saveSetup, skipSetup, addNote, removeNote, learn, makeGuide, openAt, uploads, contributors, share };
+
+	// ---- "A new version of Crux is out" (2026-11-12) ----
+	// Crux web serves desktop/latest.json: { version, url, notes }. The app compares it with its own
+	// version and the renderer shows a banner; the download opens in the browser. Downloads come
+	// only from the Crux desktop releases on GitHub.
+	const RELEASES = "https://github.com/kkkkenya/crux-desktop/releases/";
+	async function updateCheck() {
+		let latest;
+		try {
+			const response = await fetch(`${ORIGIN}/desktop/latest.json`, { headers: { accept: "application/json" }, cache: "no-store", redirect: "error" });
+			if (!response.ok) return { available: false };
+			latest = await response.json();
+		} catch { return { available: false }; } // offline: say nothing
+		const version = typeof latest?.version === "string" ? latest.version.trim() : "";
+		const url = typeof latest?.url === "string" ? latest.url : "";
+		if (!/^\d+\.\d+\.\d+$/.test(version) || !url.startsWith(RELEASES)) return { available: false };
+		const current = app.getVersion();
+		return { available: newerVersion(version, current), version, current, url, notes: text(latest.notes, 300) };
+	}
+	async function openUpdate(url) {
+		if (typeof url !== "string" || !url.startsWith(RELEASES)) throw new CruxError("bad-request", "That download link isn't a Crux release.");
+		await shell.openExternal(url);
+		return true;
+	}
+
+	return { status, login, logout, units, files, download, reveal, hubRoot, study, catalog, saveSetup, skipSetup, addNote, removeNote, learn, makeGuide, openAt, uploads, contributors, share, updateCheck, openUpdate };
 }
 
 /** Renderer commands. The caller has already checked the sender is the trusted app window. */
@@ -521,6 +555,8 @@ async function cruxControl(command, hub, parentWindow) {
 			case "uploads": return { ok: true, value: await hub.uploads(command.unit) };
 			case "contributors": return { ok: true, value: await hub.contributors() };
 			case "share": return { ok: true, value: await hub.share(command.request) };
+			case "updateCheck": return { ok: true, value: await hub.updateCheck() };
+			case "openUpdate": return { ok: true, value: await hub.openUpdate(command.url) };
 		}
 	} catch (err) {
 		// Errors cross IPC as data so the renderer can show the reason and react to the code.
@@ -554,4 +590,4 @@ function attachCruxChild(child, getHub) {
 	return { dispose() { disposed = true; child.removeListener("message", listener); } };
 }
 
-module.exports = { createCruxHub, cruxControl, attachCruxChild, safeSegment, CRUX_ORIGIN: ORIGIN };
+module.exports = { createCruxHub, cruxControl, attachCruxChild, safeSegment, newerVersion, CRUX_ORIGIN: ORIGIN };

@@ -17,7 +17,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BookOpenIcon, NotebookPenIcon, PinIcon, Trash2Icon, UploadIcon, XIcon } from "lucide-react";
 import { BrailleSpinner } from "@/components/braille-spinner";
-import type { CruxBridge, CruxCatalog, CruxContributors, CruxGuide, CruxLearn, CruxNote, CruxRef, CruxStudy, CruxUnit, CruxUploads } from "@/components/crux-hub";
+import type { CruxBridge, CruxCatalog, CruxContributors, CruxGuide, CruxLearn, CruxNote, CruxRef, CruxStudy, CruxUnit, CruxUpdate, CruxUploads } from "@/components/crux-hub";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { ContributorMedal } from "@/components/contributor-medal";
 import { Button } from "@/components/ui/button";
@@ -628,5 +628,45 @@ export function TopContributors({ bridge }: { bridge: CruxBridge }) {
 				))}
 			</ul>
 		</section>
+	);
+}
+
+// ---------------------------------------------------------------- new version notice
+
+const SKIPPED = "crux:update-later";
+
+/** "A new version of Crux is out": checked once on start. "Later" hides that version until the next one. */
+export function CruxUpdateNotice() {
+	const [update, setUpdate] = useState<CruxUpdate | null>(null);
+	const [problem, setProblem] = useState("");
+	useEffect(() => {
+		const bridge = cruxBridge();
+		if (!bridge?.updateCheck) return;
+		let live = true;
+		void bridge.updateCheck().then((reply) => {
+			if (!live || !reply.ok || !reply.value.available || !reply.value.version) return;
+			if (read(SKIPPED) === reply.value.version) return;
+			setUpdate(reply.value);
+		}).catch(() => {});
+		return () => { live = false; };
+	}, []);
+	if (!update?.url) return null;
+	const download = async () => {
+		const reply = await cruxBridge()?.openUpdate(update.url!).catch(() => null);
+		if (!reply || !reply.ok) setProblem(reply && !reply.ok ? reply.error : "The download didn't open.");
+	};
+	return (
+		<div role="status" data-testid="crux-update"
+			className="crux-glass lh-no-drag fixed bottom-5 right-5 z-50 w-80 rounded-xl p-4 text-sm shadow-2xl">
+			<p className="font-medium">Crux {update.version} is out</p>
+			<p className="mt-1 text-xs text-muted-foreground">
+				You have {update.current}. {update.notes ? `${update.notes} ` : ""}Download it and run the installer; your sessions and notes stay.
+			</p>
+			{problem && <p role="alert" className="mt-2 text-xs text-destructive">{problem}</p>}
+			<div className="mt-3 flex gap-2">
+				<Button type="button" size="xs" className="cursor-pointer" onClick={() => void download()} data-testid="crux-update-download">Download</Button>
+				<Button type="button" size="xs" variant="ghost" className="cursor-pointer" onClick={() => { write(SKIPPED, update.version!); setUpdate(null); }}>Later</Button>
+			</div>
+		</div>
 	);
 }

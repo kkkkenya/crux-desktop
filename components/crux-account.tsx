@@ -14,7 +14,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { BrailleSpinner } from "@/components/braille-spinner";
 import type { CruxBridge, CruxStatus } from "@/components/crux-hub";
 import { LhMark } from "@/components/lh-mark";
-import { CruxSetupGate } from "@/components/crux-study";
+import { CruxSetupGate, CruxUpdateNotice } from "@/components/crux-study";
 import { Button } from "@/components/ui/button";
 
 export type CruxTier = "trial" | "basic" | "premium" | "vvip" | "owner";
@@ -125,5 +125,5 @@ export function CruxAccountGate({ children }: { children: React.ReactNode }) {
 		const unknownPlan = status?.signedIn ? "Your plan isn't one this version of Crux knows. Update Crux, or ask in the Hub." : "";
 		return <Gate problem={problem || unknownPlan} busy={busy} onSignIn={() => void signIn()} />;
 	}
-	return <AccountContext.Provider value={value}><CruxSetupGate>{children}</CruxSetupGate></AccountContext.Provider>;
+	return <AccountContext.Provider value={value}><CruxSetupGate>{children}</CruxSetupGate><CruxUpdateNotice /></AccountContext.Provider>;
 }

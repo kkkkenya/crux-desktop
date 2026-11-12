@@ -99,6 +99,8 @@ contextBridge.exposeInMainWorld("lh", {
 		uploads: (unit) => ipcRenderer.invoke("lh:crux:control", { op: "uploads", unit }),
 		contributors: () => ipcRenderer.invoke("lh:crux:control", { op: "contributors" }),
 		share: (request) => ipcRenderer.invoke("lh:crux:control", { op: "share", request }),
+		updateCheck: () => ipcRenderer.invoke("lh:crux:control", { op: "updateCheck" }),
+		openUpdate: (url) => ipcRenderer.invoke("lh:crux:control", { op: "openUpdate", url }),
 	},
 	expandWindow: () => ipcRenderer.send("lh:expand-window"),
 	onZoom: (cb) => {
