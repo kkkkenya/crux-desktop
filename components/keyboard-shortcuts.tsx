@@ -57,6 +57,13 @@ export function KeyboardShortcuts() {
 	}>({ router, setCheatOpen, openSettings });
 	handlersRef.current = { router, setCheatOpen, openSettings };
 
+	// The Crux rail and search open the sheet by event, like every other action.
+	useEffect(() => {
+		const open = () => setCheatOpen(true);
+		window.addEventListener("lh:kbd-cheat-sheet", open);
+		return () => window.removeEventListener("lh:kbd-cheat-sheet", open);
+	}, []);
+
 	useEffect(() => {
 		const onKeyDown = (e: KeyboardEvent) => {
 			// ── Tab is dead (owner, 2026-09-17): preventDefault even when

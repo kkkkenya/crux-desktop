@@ -188,10 +188,13 @@ export function HubDialog({ bridge, onClose }: { bridge: CruxBridge | undefined;
 		<dialog
 			ref={dialogRef}
 			onClose={onClose}
-			onClick={(event) => { if (event.target === dialogRef.current) dialogRef.current?.close(); }}
+			onMouseDown={(event) => {
+				const box = dialogRef.current?.getBoundingClientRect();
+				if (box && (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom)) dialogRef.current?.close();
+			}}
 			aria-labelledby="hub-title"
 			data-testid="hub-dialog"
-			className="m-auto max-h-[82vh] w-[min(680px,92vw)] overflow-hidden rounded-xl border border-border bg-card p-0 text-foreground shadow-2xl backdrop:bg-black/60"
+			className="lh-no-drag m-auto max-h-[82vh] w-[min(680px,92vw)] overflow-hidden rounded-xl border border-border bg-card p-0 text-foreground shadow-2xl backdrop:bg-black/60"
 		>
 			<div className="flex max-h-[82vh] flex-col">
 				<header className="flex items-start gap-3 border-b border-border/60 px-6 pb-4 pt-5">

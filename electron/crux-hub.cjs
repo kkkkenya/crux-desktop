@@ -111,7 +111,8 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 			return new Promise((resolve) => signInWindow.once("closed", () => resolve(status().catch(() => ({ signedIn: false })))));
 		}
 		const win = new BrowserWindow({
-			width: 520,
+			// Wide enough that Discord shows its QR code beside the password form.
+			width: 980,
 			height: 760,
 			parent: parent ?? undefined,
 			title: "Sign in to Crux",

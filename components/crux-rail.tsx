@@ -111,10 +111,13 @@ function Palette({ onClose, onRun }: { onClose: () => void; onRun: (id: string, 
 		<dialog
 			ref={dialogRef}
 			onClose={onClose}
-			onClick={(event) => { if (event.target === dialogRef.current) dialogRef.current?.close(); }}
+			onMouseDown={(event) => {
+				const box = dialogRef.current?.getBoundingClientRect();
+				if (box && (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom)) dialogRef.current?.close();
+			}}
 			aria-label="Search Crux"
 			data-testid="crux-palette"
-			className="crux-glass m-auto mt-[14vh] w-[min(560px,92vw)] overflow-hidden rounded-xl p-0 text-foreground backdrop:bg-black/50"
+			className="crux-glass lh-no-drag m-auto mt-[14vh] w-[min(560px,92vw)] overflow-hidden rounded-xl p-0 text-foreground backdrop:bg-black/50"
 		>
 			<div className="flex items-center gap-2 border-b border-border/60 px-4">
 				<SearchIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
