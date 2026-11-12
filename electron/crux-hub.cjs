@@ -469,4 +469,29 @@ async function cruxControl(command, hub, parentWindow) {
 	}
 }
 
-module.exports = { createCruxHub, cruxControl, safeSegment, CRUX_ORIGIN: ORIGIN };
+/*
+ * The tutor's hub tools (src/agent/tools/hub.ts) run in the local server child.
+ * They ask over the child's private IPC channel; the Crux session stays here.
+ * Three questions only: the student's units, a unit's hub files, and one file
+ * downloaded to the Hub folder (its local path comes back, nothing else).
+ */
+function attachCruxChild(child, getHub) {
+	let disposed = false;
+	const send = (packet) => { if (!disposed && child.connected) { try { child.send(packet, () => {}); } catch { /* child exited */ } } };
+	const listener = async (message) => {
+		if (disposed || message?.channel !== "lh:crux" || typeof message.id !== "string") return;
+		const { id, op } = message;
+		const hub = getHub();
+		let reply;
+		if (!hub) reply = { ok: false, code: "signed-out", error: "Crux is still starting. Try again in a moment." };
+		else if (op === "units") reply = await cruxControl({ op: "units" }, hub, null);
+		else if (op === "files") reply = await cruxControl({ op: "files", unit: message.unit }, hub, null);
+		else if (op === "download") reply = await cruxControl({ op: "download", unit: message.unit, id: message.fileId, name: message.name }, hub, null);
+		else reply = { ok: false, code: "bad-request", error: "Unknown request." };
+		send({ channel: "lh:crux", id, op, ...reply });
+	};
+	child.on("message", listener);
+	return { dispose() { disposed = true; child.removeListener("message", listener); } };
+}
+
+module.exports = { createCruxHub, cruxControl, attachCruxChild, safeSegment, CRUX_ORIGIN: ORIGIN };

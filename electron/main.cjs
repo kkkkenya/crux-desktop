@@ -32,7 +32,7 @@ const { createSubscriptions, loadSubscriptionSDK } = require("./subscriptions.cj
 const { attachSubscriptionChild, subscriptionControl } = require("./subscription-ipc.cjs");
 const { desktopAPIHeaders } = require("./desktop-api.cjs");
 const { openWebSubscriptionBrowser } = require("./web-subscription-browser.cjs");
-const { createCruxHub, cruxControl } = require("./crux-hub.cjs");
+const { createCruxHub, cruxControl, attachCruxChild } = require("./crux-hub.cjs");
 const { randomBytes } = require("node:crypto");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
@@ -143,6 +143,9 @@ let chatgpt = null;
 let chatgptChild = null;
 let subscriptions = null;
 let subscriptionChild = null;
+// The Crux account (set once the app is ready) and the server child's hub channel.
+let cruxHubRef = null;
+let cruxChild = null;
 // Per-launch request capability, never OAuth tokens and never renderer state.
 let desktopAPISecret = null;
 let reopenWindow = null;
@@ -226,6 +229,8 @@ function startServer(port) {
 					LH_AUTH_FILE: AUTH_FILE(),
 					LH_DESKTOP_SERVER: "1",
 					LH_DESKTOP_API_SECRET: desktopAPISecret,
+					// Where hub files are saved: the tutor may read there even in restricted mode.
+					CRUX_HUB_DIR: path.join(app.getPath("documents"), "Crux", "Hub"),
 				},
 				stdio: ["ignore", "pipe", "pipe", "ipc"],
 			},
@@ -233,6 +238,7 @@ function startServer(port) {
 		serverProcess = child;
 		chatgptChild = attachChatGPTChild(child, chatgpt);
 		subscriptionChild = attachSubscriptionChild(child, subscriptions);
+		cruxChild = attachCruxChild(child, () => cruxHubRef);
 		const fwd = (buf) => buf.toString().trimEnd().split("\n").forEach((l) => l && log(`server: ${l}`));
 		child.stdout.on("data", fwd);
 		child.stderr.on("data", fwd);
@@ -243,6 +249,8 @@ function startServer(port) {
 			chatgptChild = null;
 			subscriptionChild?.dispose();
 			subscriptionChild = null;
+			cruxChild?.dispose();
+			cruxChild = null;
 			chatgpt?.close();
 			subscriptions?.close();
 		});
@@ -737,6 +745,7 @@ async function main() {
 	// Crux account + hub files: available in the packaged app and in the dev shell alike.
 	// It talks to Crux's own server, never to the local one, so it needs no server child.
 	const cruxHub = createCruxHub({ app, BrowserWindow, session, shell, log });
+	cruxHubRef = cruxHub;
 	ipcMain.handle("lh:crux:control", async (event, command) => {
 		const win = BrowserWindow.fromWebContents(event.sender);
 		if (!trustedAppWindows.has(win) || !trustedSender(event, new URL(url).origin, BrowserWindow)) throw new Error("Untrusted desktop request.");

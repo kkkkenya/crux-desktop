@@ -99,9 +99,17 @@ export function resolvePolicy(policy: FileAccessPolicy = fileAccessPolicy()): Re
  * folder boundary never locks a document-sourced session out of its own
  * curriculum. App-owned learning data, not a widening of the filesystem
  * walk (ls/find roots are unchanged). */
+/** Crux desktop: hub files the tutor downloaded (Documents/Crux/Hub, set by the
+ * main process as CRUX_HUB_DIR) are app-fetched course material, like staged
+ * session documents: readable in restricted mode too. */
+function inCruxHub(real: string): boolean {
+	const dir = process.env.CRUX_HUB_DIR;
+	return typeof dir === "string" && path.isAbsolute(dir) && isWithin(real, dir);
+}
+
 export function guardSourcePath(absolute: string, policy: ResolvedFileAccessPolicy = resolvePolicy()): string {
 	const real = realSourcePath(absolute);
-	if (policy.restricted && !isWithin(real, PATHS.materials) && !policy.folders.some((folder) => isWithin(real, folder))) {
+	if (policy.restricted && !isWithin(real, PATHS.materials) && !inCruxHub(real) && !policy.folders.some((folder) => isWithin(real, folder))) {
 		throw new Error(
 			`Access denied: ${absolute} is outside the allowed folders, or no allowed folders are available. ` +
 			"Use ls without a path to list allowed folders, or ask the learner to adjust File access in Settings → Agent → Tools.",
