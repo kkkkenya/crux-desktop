@@ -29,6 +29,8 @@ const OPS = new Set([
 	"status", "login", "logout", "units", "files", "download", "reveal",
 	// Study setup, the notes panel and "open in book" (2026-11-12).
 	"study", "catalog", "saveSetup", "skipSetup", "addNote", "removeNote", "learn", "makeGuide", "openAt",
+	// Sharing a file with the class, and the contributor board.
+	"uploads", "contributors", "share",
 ]);
 const ID = /^[\w-]{1,40}$/;
 const UNIT = /^[A-Z]{2,5} ?\d{3}[A-Z]?$/;
@@ -437,7 +439,62 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 		return { path: file.path, left: file.left };
 	}
 
-	return { status, login, logout, units, files, download, reveal, hubRoot, study, catalog, saveSetup, skipSetup, addNote, removeNote, learn, makeGuide, openAt };
+	// ---- Share a file with the class, with the student's consent (2026-11-12) ----
+	// Crux web's own pipeline: a signed upload to Crux storage, then the hub PC (the bot)
+	// posts it to the unit's Discord thread, credited to the student. Duplicates earn nothing.
+	const SHARE_TYPES = /\.(pdf|jpe?g|png|pptx?|docx?)$/i;
+	const SHARE_MAX = 50 * 1024 * 1024;
+	const sameName = (a, b) => String(a).toLowerCase().replace(/\.[a-z0-9]+$/, "").replace(/[^a-z0-9]+/g, " ").trim() === String(b).toLowerCase().replace(/\.[a-z0-9]+$/, "").replace(/[^a-z0-9]+/g, " ").trim();
+
+	async function uploads(unit) {
+		if (!UNIT.test(String(unit))) throw new CruxError("bad-request", "Pick a unit first.");
+		const r = await api(`/api/uploads?unit=${encodeURIComponent(unit)}`);
+		const c = r?.credits ?? {};
+		return {
+			files: list(r?.files).slice(0, 20).map((f) => ({ name: text(f?.name, 200), status: text(f?.status, 20), at: text(f?.created_at, 40) })),
+			credits: { count: Number(c.count) || 0, goal: Number(c.goal) || 10, until: typeof c.until === "string" ? c.until : null, premium: c.premium === true, earned: c.earned === true },
+		};
+	}
+
+	async function contributors() {
+		const r = await api("/api/contributors");
+		const pic = (v) => (typeof v === "string" && v.startsWith("https://cdn.discordapp.com/") ? v : null);
+		return {
+			top: list(r?.top).slice(0, 10).map((c) => ({ name: text(c?.name, 80), files: Number(c?.files) || 0, you: c?.you === true, medal: c?.medal === true, avatar: pic(c?.avatar) })),
+			you: r?.you && Number.isFinite(r.you.rank) ? { rank: r.you.rank, files: Number(r.you.files) || 0 } : null,
+			goal: Number(r?.goal) || 10,
+		};
+	}
+
+	/** { unit, name, bytes, consent: true } → the file joins the hub PC's queue. */
+	async function share(request) {
+		if (request?.consent !== true) throw new CruxError("bad-request", "Tick the box to agree to share the file first.");
+		const unit = String(request.unit ?? "");
+		const name = text(request.name, 200);
+		const bytes = request.bytes instanceof Uint8Array ? request.bytes : null;
+		if (!UNIT.test(unit)) throw new CruxError("bad-request", "Pick one of your units first.");
+		if (!SHARE_TYPES.test(name)) throw new CruxError("bad-request", "PDFs, photos (JPG, PNG), PowerPoint and Word files only.");
+		if (!bytes || bytes.byteLength === 0) throw new CruxError("bad-request", "That file is empty.");
+		if (bytes.byteLength > SHARE_MAX) throw new CruxError("bad-request", "Up to 50 MB a file.");
+		// The hub already has one by this name: say so instead of spending the upload.
+		const have = await files(unit).catch(() => null);
+		const twin = have?.files.find((f) => sameName(f.name, name));
+		if (twin) throw new CruxError("duplicate", `The hub already has "${twin.name}" for ${unit}. Duplicates don't earn credit.`);
+		const start = await api("/api/uploads/start", "POST", { unit, name, size: bytes.byteLength, batch: String(Date.now()) });
+		let url;
+		try { url = new URL(start?.uploadUrl); } catch { throw new CruxError("failed", "Crux sent an upload link that can't be used."); }
+		if (url.protocol !== "https:" || !url.host.endsWith(".supabase.co")) throw new CruxError("failed", "Crux sent an upload link that can't be used.");
+		const form = new FormData();
+		form.append("cacheControl", "3600");
+		form.append("", new Blob([bytes]), name);
+		let put;
+		try { put = await fetch(url, { method: "PUT", body: form, redirect: "error" }); } catch { throw new CruxError("offline", "The upload failed. Check your connection and try again."); }
+		if (!put.ok) throw new CruxError("failed", `The upload failed (${put.status}).`);
+		await api("/api/uploads/done", "POST", { id: start.id });
+		return uploads(unit);
+	}
+
+	return { status, login, logout, units, files, download, reveal, hubRoot, study, catalog, saveSetup, skipSetup, addNote, removeNote, learn, makeGuide, openAt, uploads, contributors, share };
 }
 
 /** Renderer commands. The caller has already checked the sender is the trusted app window. */
@@ -461,6 +518,9 @@ async function cruxControl(command, hub, parentWindow) {
 			case "learn": return { ok: true, value: await hub.learn(command.unit, command.topicId) };
 			case "makeGuide": return { ok: true, value: await hub.makeGuide(command.unit, command.topicId, command.fresh) };
 			case "openAt": return { ok: true, value: await hub.openAt(command.unit, command.id, command.name, command.page) };
+			case "uploads": return { ok: true, value: await hub.uploads(command.unit) };
+			case "contributors": return { ok: true, value: await hub.contributors() };
+			case "share": return { ok: true, value: await hub.share(command.request) };
 		}
 	} catch (err) {
 		// Errors cross IPC as data so the renderer can show the reason and react to the code.

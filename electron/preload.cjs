@@ -96,6 +96,9 @@ contextBridge.exposeInMainWorld("lh", {
 		learn: (unit, topicId) => ipcRenderer.invoke("lh:crux:control", { op: "learn", unit, topicId }),
 		makeGuide: (unit, topicId, fresh) => ipcRenderer.invoke("lh:crux:control", { op: "makeGuide", unit, topicId, fresh }),
 		openAt: (unit, id, name, page) => ipcRenderer.invoke("lh:crux:control", { op: "openAt", unit, id, name, page }),
+		uploads: (unit) => ipcRenderer.invoke("lh:crux:control", { op: "uploads", unit }),
+		contributors: () => ipcRenderer.invoke("lh:crux:control", { op: "contributors" }),
+		share: (request) => ipcRenderer.invoke("lh:crux:control", { op: "share", request }),
 	},
 	expandWindow: () => ipcRenderer.send("lh:expand-window"),
 	onZoom: (cb) => {

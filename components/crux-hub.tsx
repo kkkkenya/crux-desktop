@@ -15,6 +15,7 @@ import { INSERT_FILE_PATHS_EVENT } from "@/components/path-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { ShareWithClass, TopContributors } from "@/components/crux-study";
 
 export type CruxReply<T> = { ok: true; value: T } | { ok: false; code: string; error: string; resetsAt?: string | null };
 export interface CruxStatus { signedIn: boolean; name?: string; tier?: string; avatar?: string; problem?: string; offline?: boolean }
@@ -39,7 +40,12 @@ export interface CruxBridge {
 	learn: (unit: string, topicId: string) => Promise<CruxReply<CruxLearn>>;
 	makeGuide: (unit: string, topicId: string, fresh?: boolean) => Promise<CruxReply<CruxGuide>>;
 	openAt: (unit: string, id: string, name: string, page: number | null) => Promise<CruxReply<{ path: string; left: number | null }>>;
+	uploads: (unit: string) => Promise<CruxReply<CruxUploads>>;
+	contributors: () => Promise<CruxReply<CruxContributors>>;
+	share: (request: { unit: string; name: string; bytes: Uint8Array; consent: boolean }) => Promise<CruxReply<CruxUploads>>;
 }
+export interface CruxUploads { files: { name: string; status: string; at: string }[]; credits: { count: number; goal: number; until: string | null; premium: boolean; earned: boolean } }
+export interface CruxContributors { top: { name: string; files: number; you: boolean; medal: boolean; avatar: string | null }[]; you: { rank: number; files: number } | null; goal: number }
 export interface CruxNote { id: string; text: string; unit: string | null; from: string; at: string }
 export interface CruxStudy {
 	units: (CruxUnit & { catDate: string | null })[];
@@ -255,6 +261,7 @@ export function HubDialog({ bridge, onClose }: { bridge: CruxBridge | undefined;
 						</div>
 					) : (
 						<div className="flex flex-col gap-5">
+							<TopContributors bridge={bridge} />
 							<section aria-label="Unit">
 								{(units?.mine.length ?? 0) > 0 && (
 									<div className="mb-3 flex flex-wrap gap-1.5" data-testid="hub-my-units">
@@ -329,6 +336,10 @@ export function HubDialog({ bridge, onClose }: { bridge: CruxBridge | undefined;
 										</>
 									)}
 								</section>
+							)}
+							{unit && files !== null && (
+								<ShareWithClass bridge={bridge} unit={unit} ownUnit={units?.mine.some((u) => u.code === unit) ?? false}
+									onShared={() => setMessage("Shared. The hub PC posts it to the unit, usually within a few minutes.")} />
 							)}
 						</div>
 					)}

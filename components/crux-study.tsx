@@ -14,10 +14,10 @@
  *
  * Everything that talks to Crux goes through window.lh.crux (electron/crux-hub.cjs).
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { BookOpenIcon, NotebookPenIcon, PinIcon, Trash2Icon, XIcon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BookOpenIcon, MedalIcon, NotebookPenIcon, PinIcon, Trash2Icon, UploadIcon, XIcon } from "lucide-react";
 import { BrailleSpinner } from "@/components/braille-spinner";
-import type { CruxBridge, CruxCatalog, CruxGuide, CruxLearn, CruxNote, CruxRef, CruxStudy, CruxUnit } from "@/components/crux-hub";
+import type { CruxBridge, CruxCatalog, CruxContributors, CruxGuide, CruxLearn, CruxNote, CruxRef, CruxStudy, CruxUnit, CruxUploads } from "@/components/crux-hub";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -510,5 +510,122 @@ export function CruxSetup({ cohort: start, onDone }: { cohort: CruxStudy["cohort
 				</div>
 			</div>
 		</main>
+	);
+}
+
+// ---------------------------------------------------------------- share with the class
+
+const STATUS_TEXT: Record<string, string> = {
+	new: "Waiting for the hub PC", received: "Being posted", posted: "Posted · 1 credit", merged: "Joined with your other photos",
+	duplicate: "The hub already had it · no credit", failed: "Couldn't be posted",
+};
+const nairobiDay = (iso: string | null) => (iso ? new Date(`${iso}T12:00:00+03:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "Africa/Nairobi" }) : "");
+
+/** What the student is told about the reward, from Crux's credit count. Pure, for tests. */
+export function rewardText(c: CruxUploads["credits"]): string {
+	if (c.earned) return `You've earned Premium until ${nairobiDay(c.until)} and a contributor medal. Thank you!`;
+	const left = Math.max(0, c.goal - c.count);
+	if (c.premium) return `Your files help the whole class. ${left} more for a contributor medal.`;
+	return `${left} more file${left === 1 ? "" : "s"} the hub doesn't have, and you get Premium until ${nairobiDay(c.until)} and a contributor medal.`;
+}
+
+/** "Share with your class": the student's own file, posted to the unit on the Study Hub Discord with their consent. */
+export function ShareWithClass({ bridge, unit, ownUnit, onShared }: { bridge: CruxBridge; unit: string; ownUnit: boolean; onShared?: () => void }) {
+	const input = useRef<HTMLInputElement>(null);
+	const [file, setFile] = useState<File | null>(null);
+	const [consent, setConsent] = useState(false);
+	const [busy, setBusy] = useState(false);
+	const [problem, setProblem] = useState("");
+	const [info, setInfo] = useState<CruxUploads | null>(null);
+	useEffect(() => {
+		if (!ownUnit) return;
+		let live = true;
+		void bridge.uploads(unit).then((r) => { if (live && r.ok) setInfo(r.value); }).catch(() => {});
+		return () => { live = false; };
+	}, [bridge, unit, ownUnit]);
+	const send = async () => {
+		if (!file || !consent) return;
+		setBusy(true); setProblem("");
+		const bytes = new Uint8Array(await file.arrayBuffer());
+		const reply = await bridge.share({ unit, name: file.name, bytes, consent }).catch(() => null);
+		setBusy(false);
+		if (!reply) { setProblem("The upload failed. Check your connection."); return; }
+		if (!reply.ok) { setProblem(reply.error); return; }
+		setInfo(reply.value); setFile(null); setConsent(false);
+		onShared?.();
+	};
+	return (
+		<section aria-label="Share with your class" className="rounded-lg border border-border/70 p-3" data-testid="hub-share">
+			<h3 className="text-sm font-medium">Share with your class</h3>
+			{!ownUnit ? (
+				<p className="mt-1 text-xs text-muted-foreground">Add {unit} to your units first (your account, then Set up my units) to share files for it.</p>
+			) : (
+				<>
+					<p className="mt-1 text-xs text-muted-foreground">Have notes, a CAT or a past paper the hub is missing? Share it and the whole class gets it.</p>
+					{info && (
+						<div className="mt-2">
+							<div className="flex items-center gap-2 text-xs">
+								<span className="tabular-nums"><b>{info.credits.count}</b> / {info.credits.goal}</span>
+								<span className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted"><span className="block h-full rounded-full bg-primary" style={{ width: `${Math.min(100, (100 * info.credits.count) / Math.max(1, info.credits.goal))}%` }} /></span>
+							</div>
+							<p className="mt-1 text-xs text-muted-foreground" data-testid="hub-reward">{rewardText(info.credits)}</p>
+						</div>
+					)}
+					<input ref={input} type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png,.ppt,.pptx,.doc,.docx"
+						onChange={(e) => { setFile(e.target.files?.[0] ?? null); setProblem(""); e.target.value = ""; }} />
+					<div className="mt-3 flex flex-wrap items-center gap-2">
+						<Button type="button" size="xs" variant="outline" className="cursor-pointer" onClick={() => input.current?.click()} data-testid="hub-share-pick">
+							<UploadIcon />{file ? "Choose another file" : "Choose a file"}
+						</Button>
+						{file && <span className="min-w-0 truncate text-xs" title={file.name}>{file.name}</span>}
+					</div>
+					{file && (
+						<>
+							<label className="mt-3 flex cursor-pointer items-start gap-2 text-xs">
+								<input type="checkbox" className="mt-0.5" checked={consent} onChange={(e) => setConsent(e.target.checked)} data-testid="hub-share-consent" />
+								<span>I agree to share this file on the Study Hub Discord for {unit}, credited to me. It is mine to share (my notes, or a paper given to the class).</span>
+							</label>
+							<Button type="button" size="xs" className="mt-2 cursor-pointer disabled:cursor-not-allowed" disabled={!consent || busy} onClick={() => void send()} data-testid="hub-share-send">
+								{busy && <BrailleSpinner label="Sharing" />}Share with {unit}
+							</Button>
+						</>
+					)}
+					{problem && <p role="alert" className="mt-2 text-xs text-destructive">{problem}</p>}
+					{info && info.files.length > 0 && (
+						<ul className="mt-3 space-y-0.5 text-xs text-muted-foreground">
+							{info.files.slice(0, 5).map((f) => <li key={f.name + f.at} className="flex gap-2"><span className="min-w-0 flex-1 truncate">{f.name}</span><span>{STATUS_TEXT[f.status] ?? f.status}</span></li>)}
+						</ul>
+					)}
+				</>
+			)}
+		</section>
+	);
+}
+
+// ---------------------------------------------------------------- top contributors
+
+/** The top contributors' pictures, a medal on those who reached the goal. Only that metric. */
+export function TopContributors({ bridge }: { bridge: CruxBridge }) {
+	const [board, setBoard] = useState<CruxContributors | null>(null);
+	useEffect(() => {
+		let live = true;
+		void bridge.contributors().then((r) => { if (live && r.ok) setBoard(r.value); }).catch(() => {});
+		return () => { live = false; };
+	}, [bridge]);
+	if (!board || board.top.length === 0) return null;
+	return (
+		<section aria-label="Top contributors" className="flex items-center gap-3" data-testid="hub-contributors">
+			<span className="text-xs uppercase tracking-widest text-muted-foreground">Top contributors</span>
+			<ul className="flex -space-x-1.5">
+				{board.top.map((c, i) => (
+					<li key={`${c.name}-${i}`} className="relative" title={`${c.name}: ${c.files} file${c.files === 1 ? "" : "s"}${c.medal ? " · contributor medal" : ""}`}>
+						<span className={cn("flex size-8 items-center justify-center overflow-hidden rounded-full border-2 bg-muted text-xs font-medium", c.you ? "border-primary" : "border-card")}>
+							{c.avatar ? <img src={c.avatar} alt={c.name} className="size-full object-cover" referrerPolicy="no-referrer" /> : c.name.slice(0, 1).toUpperCase()}
+						</span>
+						{c.medal && <MedalIcon className="absolute -bottom-1 -right-1 size-3.5 text-primary drop-shadow" aria-label="Contributor medal" />}
+					</li>
+				))}
+			</ul>
+		</section>
 	);
 }
