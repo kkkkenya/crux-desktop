@@ -666,11 +666,17 @@ body {
 	gap: 4px;
 	width: 56px;
 	flex-shrink: 0;
-	height: 100dvh;
-	padding: 12px 0;
-	background: var(--crux-glass);
-	border-right: 1px solid var(--crux-glass-bd);
-	backdrop-filter: blur(14px) saturate(1.2);
+	height: calc(100dvh - 20px);
+	margin: 10px 0 10px 10px;
+	padding: 10px 0;
+	border-radius: 20px;
+	/* Liquid glass: a lighter tint than the panels, a bright top edge and a soft sheen, floated off the window edge. */
+	background:
+		linear-gradient(180deg, rgba(255, 255, 255, 0.10), rgba(255, 255, 255, 0.02) 40%, rgba(255, 255, 255, 0.05)),
+		rgba(41, 37, 36, 0.42);
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.22), inset 0 -1px 0 rgba(255, 255, 255, 0.04);
+	backdrop-filter: blur(22px) saturate(1.6);
 	position: relative;
 	z-index: 30;
 }
@@ -705,6 +711,22 @@ body {
 	font-size: 14px;
 	cursor: pointer;
 }
+/* Icon motion, as on Crux web: each rail icon moves its own way on hover. */
+.crux-rail-btn svg { transform-box: fill-box; transform-origin: center; transition: transform 0.45s var(--crux-spring); }
+.crux-rail-btn[data-anim="spin"]:hover svg, .crux-rail-btn[data-anim="gear"]:hover svg { transform: rotate(90deg); }
+.crux-rail-btn[data-anim="lens"]:hover svg { transform: scale(1.14) rotate(-8deg); }
+.crux-rail-btn[data-anim="lid"]:hover svg { transform: translateY(-2px) rotate(-8deg); }
+.crux-rail-btn[data-anim="slide"]:hover svg { transform: translateX(2px); }
+.crux-rail-btn[data-anim="lift"]:hover svg { animation: crux-lift 0.6s ease-out; }
+.crux-rail-btn[data-anim="pulse"]:hover svg { animation: crux-pulse 0.6s ease-out; }
+.crux-rail-btn[data-anim="twinkle"]:hover svg { animation: crux-twinkle 0.7s ease-out; }
+.crux-rail-btn[data-anim="tap"]:hover svg { animation: crux-tap 0.5s ease-out; }
+.crux-rail-btn .crux-rail-mark { transition: transform 0.6s var(--crux-spring); }
+.crux-rail-btn:hover .crux-rail-mark { transform: rotate(360deg); }
+@keyframes crux-lift { 30% { transform: translateY(-3px) rotate(-12deg); } 60% { transform: translateY(-1px) rotate(8deg); } }
+@keyframes crux-pulse { 40% { transform: scale(1.18); } 70% { transform: scale(0.96); } }
+@keyframes crux-twinkle { 25% { transform: rotate(-14deg) scale(1.15); } 55% { transform: rotate(10deg) scale(0.95); } 80% { transform: rotate(-4deg); } }
+@keyframes crux-tap { 30% { transform: translateY(2px); } 60% { transform: translateY(-1px); } }
 /* Tooltips to the right of a rail icon, from data-tip. */
 .crux-rail [data-tip]::after {
 	content: attr(data-tip);
@@ -727,5 +749,6 @@ body {
 .crux-rail [data-tip]:hover::after, .crux-rail [data-tip]:focus-visible::after { opacity: 1; }
 @media (prefers-reduced-motion: reduce) {
 	.crux-rail-btn { transition: none; }
+	.crux-rail-btn svg { transition: none; animation: none !important; transform: none !important; }
 	.wallpaper .wl { animation: none; }
 }

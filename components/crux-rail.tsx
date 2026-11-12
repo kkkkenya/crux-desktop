@@ -81,7 +81,7 @@ export async function pickSurprise(fetcher: typeof fetch = fetch, random: () => 
 	return { mode: "teach", text: IDEAS[Math.floor(random() * IDEAS.length)]! };
 }
 
-function RailButton({ icon: Icon, label, onClick, active, testid }: { icon: LucideIcon; label: string; onClick: () => void; active?: boolean; testid?: string }) {
+function RailButton({ icon: Icon, label, onClick, active, testid, anim }: { icon: LucideIcon; label: string; onClick: () => void; active?: boolean; testid?: string; anim?: string }) {
 	return (
 		<button
 			type="button"
@@ -90,6 +90,7 @@ function RailButton({ icon: Icon, label, onClick, active, testid }: { icon: Luci
 			aria-pressed={active}
 			data-tip={label}
 			data-testid={testid}
+			data-anim={anim}
 			className={cn("crux-rail-btn lh-no-drag", active && "is-active")}
 		>
 			<Icon className="size-5" strokeWidth={1.75} aria-hidden />
@@ -206,19 +207,19 @@ export function CruxRail({ sessionsOpen, onToggleSessions, onOpenSettings }: { s
 	return (
 		<nav className="crux-rail lh-drag" aria-label="Crux" data-testid="crux-rail">
 			<Link href="/" aria-label="Home: knowledge graph" data-tip="Home" className="crux-rail-btn lh-no-drag mb-1">
-				<LhMark className="size-7" />
+				<LhMark className="crux-rail-mark size-7" />
 			</Link>
-			<RailButton icon={PlusIcon} label="New session (Ctrl+N)" onClick={() => router.push("/chat/new")} testid="rail-new" />
-			<RailButton icon={PanelLeftIcon} label="Sessions (Ctrl+B)" onClick={onToggleSessions} active={sessionsOpen} testid="rail-sessions" />
-			<RailButton icon={DumbbellIcon} label="Practise" onClick={() => router.push("/chat/new?mode=practice")} testid="rail-practise" />
-			<RailButton icon={NetworkIcon} label="Knowledge graph (Ctrl+G)" onClick={() => router.push("/")} testid="rail-graph" />
+			<RailButton icon={PlusIcon} label="New session (Ctrl+N)" onClick={() => router.push("/chat/new")} testid="rail-new" anim="spin" />
+			<RailButton icon={PanelLeftIcon} label="Sessions (Ctrl+B)" onClick={onToggleSessions} active={sessionsOpen} testid="rail-sessions" anim="slide" />
+			<RailButton icon={DumbbellIcon} label="Practise" onClick={() => router.push("/chat/new?mode=practice")} testid="rail-practise" anim="lift" />
+			<RailButton icon={NetworkIcon} label="Knowledge graph (Ctrl+G)" onClick={() => router.push("/")} testid="rail-graph" anim="pulse" />
 			<span className="crux-rail-sep" aria-hidden />
-			<RailButton icon={SearchIcon} label="Search Crux (Ctrl+P)" onClick={() => setPalette(true)} testid="rail-search" />
-			<RailButton icon={LibraryIcon} label="Hub files" onClick={() => setHub(true)} testid="rail-hub" />
-			<RailButton icon={SparklesIcon} label={surprising ? "Picking something…" : "Surprise me"} onClick={() => void surprise()} testid="rail-surprise" />
+			<RailButton icon={SearchIcon} label="Search Crux (Ctrl+P)" onClick={() => setPalette(true)} testid="rail-search" anim="lens" />
+			<RailButton icon={LibraryIcon} label="Hub files" onClick={() => setHub(true)} testid="rail-hub" anim="lid" />
+			<RailButton icon={SparklesIcon} label={surprising ? "Picking something…" : "Surprise me"} onClick={() => void surprise()} testid="rail-surprise" anim="twinkle" />
 			<span className="flex-1" />
-			<RailButton icon={KeyboardIcon} label="Keyboard shortcuts (?)" onClick={() => runAction("cheat-sheet")} testid="rail-shortcuts" />
-			<RailButton icon={SettingsIcon} label="Settings (Ctrl+,)" onClick={onOpenSettings} testid="rail-settings" />
+			<RailButton icon={KeyboardIcon} label="Keyboard shortcuts (?)" onClick={() => runAction("cheat-sheet")} testid="rail-shortcuts" anim="tap" />
+			<RailButton icon={SettingsIcon} label="Settings (Ctrl+,)" onClick={onOpenSettings} testid="rail-settings" anim="gear" />
 			{account && (
 				<div className="relative lh-no-drag">
 					<button
