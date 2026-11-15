@@ -19,7 +19,8 @@ import fs from "node:fs";
 import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "..");
-const installed = path.join(process.env.LOCALAPPDATA ?? "", "Programs", "Crux Harness");
+// An install over an older Crux keeps its folder (Programs\Crux); a fresh one goes to Programs\Crux Harness.
+const installed = ["Crux Harness", "Crux"].map((d) => path.join(process.env.LOCALAPPDATA ?? "", "Programs", d)).find((d) => fs.existsSync(path.join(d, "Crux Harness.exe"))) ?? path.join(process.env.LOCALAPPDATA ?? "", "Programs", "Crux Harness");
 const target = path.join(installed, "resources", "server", "standalone");
 const source = path.join(root, ".next", "standalone");
 const log = path.join(process.env.APPDATA ?? "", "Crux", "logs", "main.log");
@@ -27,7 +28,7 @@ const log = path.join(process.env.APPDATA ?? "", "Crux", "logs", "main.log");
 const fail = (msg) => { console.error(`crux-update: ${msg}`); process.exit(1); };
 const running = () => {
 	const out = spawnSync("tasklist", ["/FI", "IMAGENAME eq Crux Harness.exe", "/NH"], { encoding: "utf8" }).stdout ?? "";
-	return /Crux\.exe/i.test(out);
+	return /Crux Harness\.exe/i.test(out);
 };
 
 if (!fs.existsSync(path.join(installed, "Crux Harness.exe"))) fail(`no installed Crux Harness at ${installed}`);
