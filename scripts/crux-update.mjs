@@ -19,18 +19,18 @@ import fs from "node:fs";
 import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "..");
-const installed = path.join(process.env.LOCALAPPDATA ?? "", "Programs", "Crux");
+const installed = path.join(process.env.LOCALAPPDATA ?? "", "Programs", "Crux Harness");
 const target = path.join(installed, "resources", "server", "standalone");
 const source = path.join(root, ".next", "standalone");
 const log = path.join(process.env.APPDATA ?? "", "Crux", "logs", "main.log");
 
 const fail = (msg) => { console.error(`crux-update: ${msg}`); process.exit(1); };
 const running = () => {
-	const out = spawnSync("tasklist", ["/FI", "IMAGENAME eq Crux.exe", "/NH"], { encoding: "utf8" }).stdout ?? "";
+	const out = spawnSync("tasklist", ["/FI", "IMAGENAME eq Crux Harness.exe", "/NH"], { encoding: "utf8" }).stdout ?? "";
 	return /Crux\.exe/i.test(out);
 };
 
-if (!fs.existsSync(path.join(installed, "Crux.exe"))) fail(`no installed Crux at ${installed}`);
+if (!fs.existsSync(path.join(installed, "Crux Harness.exe"))) fail(`no installed Crux Harness at ${installed}`);
 
 // The window shell changed since the installed asar was made: say so, the copy below won't carry it.
 const asar = path.join(installed, "resources", "app.asar");
@@ -47,9 +47,9 @@ if (!fs.existsSync(path.join(source, "server.js"))) fail("no build in .next/stan
 
 if (running()) {
 	console.log("crux-update: closing Crux…");
-	spawnSync("taskkill", ["/IM", "Crux.exe"]);
+	spawnSync("taskkill", ["/IM", "Crux Harness.exe"]);
 	for (let i = 0; i < 20 && running(); i++) execSync("ping -n 2 127.0.0.1 >NUL");
-	if (running()) spawnSync("taskkill", ["/F", "/IM", "Crux.exe"]);
+	if (running()) spawnSync("taskkill", ["/F", "/IM", "Crux Harness.exe"]);
 }
 
 // robocopy /MIR copies only what changed and removes what is gone. Exit codes below 8 are success.
@@ -59,7 +59,7 @@ if (copy.status === null || copy.status >= 8) fail(`copy failed (robocopy ${copy
 
 // Start it again and wait for the window.
 const before = fs.existsSync(log) ? fs.readFileSync(log, "utf8").length : 0;
-spawnSync("cmd", ["/c", "start", "", path.join(installed, "Crux.exe")], { cwd: installed });
+spawnSync("cmd", ["/c", "start", "", path.join(installed, "Crux Harness.exe")], { cwd: installed });
 const until = Date.now() + 120_000;
 while (Date.now() < until) {
 	const tail = fs.existsSync(log) ? fs.readFileSync(log, "utf8").slice(before) : "";

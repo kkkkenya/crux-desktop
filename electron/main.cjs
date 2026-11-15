@@ -44,7 +44,8 @@ const path = require("node:path");
 // renderer owns the number; this is the IPC widen target).
 const SIDEBAR_AUTOCLOSE = 928;
 
-const PRODUCT_NAME = "Crux";
+const PRODUCT_NAME = "Crux"; // the data folder name: %APPDATA%\Crux stays when the app is renamed
+const DISPLAY_NAME = "Crux Harness";
 // Flip to true only once electron-builder.yml has a Crux publish feed.
 const CRUX_UPDATES = false;
 
@@ -302,7 +303,7 @@ function createWindow(url) {
 	const win = new BrowserWindow({
 		width: 1440,
 		height: 900,
-		title: PRODUCT_NAME,
+		title: DISPLAY_NAME,
 		// Merged chrome (owner, 2026-09-17): the system title bar is gone;
 		// the app's own 60px header bands ARE the title bar. The traffic
 		// lights float over the sidebar's LH wordmark band, vertically

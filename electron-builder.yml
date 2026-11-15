@@ -10,7 +10,7 @@
 #     the login keychain; notary credentials in the LH_NOTARY keychain
 #     profile; the profile + team env vars are baked into desktop:dist).
 appId: site.engineeringhub.crux
-productName: Crux
+productName: Crux Harness
 directories:
   output: dist
 # Icons (owner ruling, 2026-10-13) — per-platform sources in build/:
@@ -162,7 +162,7 @@ win:
     - target: nsis
       arch:
         - x64
-  artifactName: "${productName}-${version}-${arch}-setup.${ext}"
+  artifactName: "Crux-Harness-${version}-${arch}-setup.${ext}"
   # Unsigned Windows release (owner ruling): preserve icon/version metadata,
   # skip signing, and do not require a publisher signature for updates.
   signExecutable: false
@@ -177,8 +177,13 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: always
   createStartMenuShortcut: true
-  shortcutName: Crux
-  uninstallDisplayName: Crux
+  shortcutName: Crux Harness
+  uninstallDisplayName: Crux Harness
+  # Unzip straight into the install folder. The default 7z path unpacks every file to a temp folder, then copies
+  # each one again with no progress shown, which is where the installer looked stuck. Differential packages only
+  # serve electron-updater, which Crux Harness does not use (CRUX_UPDATES in electron/main.cjs).
+  differentialPackage: false
+  useZip: true
   include: build/installer.nsh
 linux:
   icon: build/icon.png

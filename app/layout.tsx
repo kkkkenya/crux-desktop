@@ -18,7 +18,7 @@ const sans = Manrope({ subsets: ["latin"], variable: "--font-manrope" });
 const title = Fraunces({ subsets: ["latin"], variable: "--font-fraunces", axes: ["opsz"] });
 
 export const metadata: Metadata = {
-	title: "Crux",
+	title: "Crux Harness",
 	description: "Crux finds your level, plans the unit and teaches it step by step, with practice and a map of what you know.",
 };
 
