@@ -89,19 +89,22 @@ export function matchUnits(all: readonly CruxUnit[], query: string): CruxUnit[] 
 		.slice(0, 8);
 }
 
-function FileRow({ file, busy, onDownload, onAdd, onReveal }: {
+export function FileRow({ file, busy, picked, onPick, onDownload, onAdd, onReveal }: {
 	file: CruxFile;
 	busy: boolean;
+	picked: boolean;
+	onPick: () => void;
 	onDownload: () => void;
 	onAdd: () => void;
 	onReveal: () => void;
 }) {
 	return (
 		<li className="flex items-center gap-3 border-t border-border/60 py-2 first:border-t-0" data-testid="hub-file">
+			<input type="checkbox" className="size-4 shrink-0 cursor-pointer accent-primary" checked={picked} onChange={onPick} aria-label={`Select ${file.name}`} data-testid="hub-pick" />
 			<FileTextIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
 			<span className="min-w-0 flex-1">
 				<span className="block truncate text-sm" title={file.name}>{file.name}</span>
-				{file.pages !== null && <span className="block text-xs text-muted-foreground">{file.pages} {file.pages === 1 ? "page" : "pages"}</span>}
+				{(file.pages ?? 0) > 0 && <span className="block text-xs text-muted-foreground">{file.pages} {file.pages === 1 ? "page" : "pages"}</span>}
 			</span>
 			{file.path ? (
 				<>
@@ -132,6 +135,8 @@ export function HubDialog({ bridge, onClose }: { bridge: CruxBridge | undefined;
 	const [busy, setBusy] = useState<string | null>(null); // "sign-in" or "files"
 	const [downloading, setDownloading] = useState<ReadonlySet<string>>(new Set()); // file ids, across unit switches
 	const [message, setMessage] = useState<string>("");
+	const [picked, setPicked] = useState<ReadonlySet<string>>(new Set()); // file ids ticked for "Add to session"
+	const [adding, setAdding] = useState(false);
 
 	useEffect(() => {
 		const dialog = dialogRef.current;
@@ -169,7 +174,7 @@ export function HubDialog({ bridge, onClose }: { bridge: CruxBridge | undefined;
 	useEffect(() => {
 		if (!bridge || !unit || !status?.signedIn) return;
 		let cancelled = false;
-		setFiles(null); setNote(null); setBusy("files"); setMessage("");
+		setFiles(null); setNote(null); setBusy("files"); setMessage(""); setPicked(new Set());
 		try { localStorage.setItem(LAST_UNIT, unit); } catch { /* storage blocked */ }
 		void bridge.files(unit).then((reply) => {
 			if (cancelled) return;
@@ -197,24 +202,45 @@ export function HubDialog({ bridge, onClose }: { bridge: CruxBridge | undefined;
 		setStatus({ signedIn: false }); setUnits(null); setUnit(null); setFiles(null); setMessage("");
 	};
 
-	const download = async (file: CruxFile) => {
-		if (!bridge || !unit) return;
-		if (downloading.has(file.id)) return;
+	// → the saved path, or null when the download failed (the reason is in the message line)
+	const download = async (file: CruxFile): Promise<string | null> => {
+		if (!bridge || !unit) return null;
+		if (file.path) return file.path;
+		if (downloading.has(file.id)) return null;
 		setDownloading((current) => new Set(current).add(file.id)); setMessage("");
 		const reply = await bridge.download(unit, file.id, file.name);
 		setDownloading((current) => { const next = new Set(current); next.delete(file.id); return next; });
-		if (!reply.ok) { fail(reply); return; }
+		if (!reply.ok) { fail(reply); return null; }
 		setFiles((current) => current?.map((f) => (f.id === file.id ? { ...f, path: reply.value.path } : f)) ?? null);
 		if (typeof reply.value.left === "number") setMessage(`Downloaded. ${reply.value.left} ${reply.value.left === 1 ? "download" : "downloads"} left today.`);
+		return reply.value.path;
 	};
 
-	const addToSession = (file: CruxFile) => {
-		if (!file.path) return;
+	const insertPaths = (paths: string[]) => {
 		const editor = document.querySelector<HTMLElement>("[data-file-path-default]");
-		if (!editor) { setMessage("Open a session or the home screen first, then add the file."); return; }
-		editor.dispatchEvent(new CustomEvent(INSERT_FILE_PATHS_EVENT, { detail: [file.path] }));
+		if (!editor) { setMessage("Open a session or the home screen first, then add the files."); return false; }
+		editor.dispatchEvent(new CustomEvent(INSERT_FILE_PATHS_EVENT, { detail: paths }));
 		onClose();
 		editor.focus();
+		return true;
+	};
+	const addToSession = (file: CruxFile) => { if (file.path) insertPaths([file.path]); };
+	const togglePick = (id: string) => setPicked((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+	// Several at once: download the ticked files that aren't saved yet, one by one, then add them all.
+	const addPicked = async () => {
+		const chosen = (files ?? []).filter((f) => picked.has(f.id));
+		if (!chosen.length) return;
+		if (!document.querySelector("[data-file-path-default]")) { setMessage("Open a session or the home screen first, then add the files."); return; }
+		setAdding(true); setMessage("");
+		const paths: string[] = [];
+		for (const file of chosen) {
+			const saved = await download(file);
+			if (saved) paths.push(saved);
+		}
+		setAdding(false);
+		if (!paths.length) return;
+		if (paths.length < chosen.length) setMessage(`Added ${paths.length} of ${chosen.length}. The others did not download.`);
+		insertPaths(paths);
 	};
 
 	const matches = useMemo(() => matchUnits(units?.all ?? [], query), [units, query]);
@@ -328,6 +354,8 @@ export function HubDialog({ bridge, onClose }: { bridge: CruxBridge | undefined;
 																key={file.id}
 																file={file}
 																busy={downloading.has(file.id)}
+																picked={picked.has(file.id)}
+																onPick={() => togglePick(file.id)}
 																onDownload={() => void download(file)}
 																onAdd={() => addToSession(file)}
 																onReveal={() => { if (file.path) void bridge.reveal(file.path).then((reply) => { if (!reply.ok) setMessage(reply.error); }); }}
@@ -348,6 +376,16 @@ export function HubDialog({ bridge, onClose }: { bridge: CruxBridge | undefined;
 					)}
 				</div>
 
+				{picked.size > 0 && (
+					<div className="flex items-center gap-3 border-t border-border/60 px-6 py-3" data-testid="hub-picked-bar">
+						<span className="text-sm">{picked.size} selected</span>
+						<span className="flex-1" />
+						<Button type="button" size="xs" variant="ghost" className="cursor-pointer" disabled={adding} onClick={() => setPicked(new Set())}>Clear</Button>
+						<Button type="button" size="xs" className="cursor-pointer disabled:cursor-not-allowed" disabled={adding} aria-busy={adding} onClick={() => void addPicked()} data-testid="hub-add-picked">
+							{adding ? <BrailleSpinner label="Adding files" /> : <PlusIcon />}Add {picked.size} to session
+						</Button>
+					</div>
+				)}
 				{message && <p role="status" className="border-t border-border/60 px-6 py-3 text-xs text-muted-foreground" data-testid="hub-message">{message}</p>}
 			</div>
 		</dialog>
