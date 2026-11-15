@@ -14,7 +14,7 @@
  *
  * Crux must be closed (the copy replaces files the running server holds).
  */
-import { execSync, spawnSync } from "node:child_process";
+import { execSync, spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -60,7 +60,7 @@ if (copy.status === null || copy.status >= 8) fail(`copy failed (robocopy ${copy
 
 // Start it again and wait for the window.
 const before = fs.existsSync(log) ? fs.readFileSync(log, "utf8").length : 0;
-spawnSync("cmd", ["/c", "start", "", path.join(installed, "Crux Harness.exe")], { cwd: installed });
+spawn("cmd", ["/c", "start", "", path.join(installed, "Crux Harness.exe")], { cwd: installed, detached: true, stdio: "ignore" }).unref(); // detached: the app must not hold this script open
 const until = Date.now() + 120_000;
 while (Date.now() < until) {
 	const tail = fs.existsSync(log) ? fs.readFileSync(log, "utf8").slice(before) : "";
