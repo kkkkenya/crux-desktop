@@ -11,7 +11,8 @@
  * full installer instead (docs/crux/RELEASING.md): the script refuses then.
  * The shell version is the last version released with an installer, read from docs/crux/shell-version.
  */
-import { createHash } from "node:crypto";
+import { createHash, createPrivateKey, sign } from "node:crypto";
+import os from "node:os";
 import { execSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -30,13 +31,18 @@ if (version === shell) fail(`package.json is still ${version}, the installer's v
 // The shell is what the installer packaged: electron/ must not have changed since the tag v<shell>.
 const changed = spawnSync("git", ["diff", "--name-only", `v${shell}`, "--", "electron", "electron-builder.yml", "build"], { cwd: root, encoding: "utf8" });
 if (changed.status !== 0) fail(`no git tag v${shell} to compare the shell with. Tag the installer's commit: git tag v${shell} <commit>`);
-if (changed.stdout.trim()) fail(`the window shell changed since ${shell}; release a full installer instead:\n${changed.stdout}`);
+const untracked = spawnSync("git", ["ls-files", "--others", "--exclude-standard", "--", "electron", "build"], { cwd: root, encoding: "utf8" }).stdout.trim();
+if (changed.stdout.trim() || untracked) fail(`the window shell changed since ${shell}; release a full installer instead:\n${changed.stdout}${untracked}`);
+// The release key signs every update; the app checks it with the public key in electron/crux-patch.cjs.
+const keyFile = process.env.CRUX_PATCH_KEY || path.join(os.homedir(), ".crux-desktop", "patch-signing.pem");
+if (!fs.existsSync(keyFile)) fail(`no release key at ${keyFile}`);
 
 if (!process.argv.includes("--no-build")) {
-	console.log("crux-patch-release: building (next build + build-server, a few minutes)…");
+	console.log("crux-patch-release: building (next build, a few minutes)…");
 	execSync("npm run build", { cwd: root, stdio: ["ignore", "ignore", "inherit"] });
-	execSync("node scripts/build-server.mjs", { cwd: root, stdio: ["ignore", "ignore", "inherit"] });
 }
+// always: it copies public/ and .next/static in and replaces links, as the installer build does
+execSync("node scripts/build-server.mjs", { cwd: root, stdio: ["ignore", "ignore", "inherit"] });
 const standalone = path.join(root, ".next", "standalone");
 if (!fs.existsSync(path.join(standalone, "server.js"))) fail("no server in .next/standalone; run without --no-build");
 
@@ -51,7 +57,8 @@ if (made.status !== 0) fail(`zipping failed (tar ${made.status})`);
 const bytes = fs.readFileSync(zip);
 const sha256 = createHash("sha256").update(bytes).digest("hex");
 const url = `https://github.com/kkkkenya/crux-desktop/releases/download/v${version}/${name}`;
-const patch = { version, url, sha256, size: bytes.length, shell };
+const sig = sign(null, Buffer.from(`crux-harness-patch|${version}|${shell}|${sha256}`), createPrivateKey(fs.readFileSync(keyFile))).toString("base64");
+const patch = { version, url, sha256, size: bytes.length, shell, sig };
 console.log(`crux-patch-release: ${name}, ${(bytes.length / 1048576).toFixed(1)} MB, sha256 ${sha256}`);
 
 const notesFile = path.join(root, "docs", "crux", "versions", `${version}.md`);
@@ -65,7 +72,7 @@ const gh = (args) => spawnSync("gh", args, { cwd: root, stdio: "inherit" });
 const exists = spawnSync("gh", ["release", "view", `v${version}`, "--repo", "kkkkenya/crux-desktop"], { cwd: root, stdio: "ignore" }).status === 0;
 const up = exists
 	? gh(["release", "upload", `v${version}`, zip, "--clobber", "--repo", "kkkkenya/crux-desktop"])
-	: gh(["release", "create", `v${version}`, zip, "--repo", "kkkkenya/crux-desktop", "--target", "crux", "--title", `Crux Harness ${version}`, "--notes-file", notesFile]);
+	: gh(["release", "create", `v${version}`, zip, "--repo", "kkkkenya/crux-desktop", "--target", "crux", "--title", `Crux Harness ${version}`, "--notes-file", notesFile, "--latest=false"]); // the site's Download (releases/latest) stays on the last installer
 if (up.status !== 0) fail("the upload failed");
 
 // Crux web's latest.json: the new version, the installer link stays (students without the shell still need it).

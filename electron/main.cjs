@@ -725,8 +725,16 @@ async function main() {
 			if (!patch) throw err;
 			// An update that does not start is switched off; the installed server takes over on the restart.
 			log(`update ${patch.version} did not start (${err?.message ?? err}); going back to the installed version`);
-			disablePatch(app.getPath("userData"));
 			killServer();
+			try {
+				disablePatch(app.getPath("userData"));
+			} catch (e) {
+				// could not switch it off: relaunching would only fail again
+				log(`could not switch update ${patch.version} off: ${e?.message ?? e}`);
+				dialog.showErrorBox("Crux Harness", `The update to ${patch.version} did not start. Delete the folder server-patch in ${app.getPath("userData")}, then open Crux Harness again.`);
+				app.exit(1);
+				return;
+			}
 			app.relaunch();
 			app.exit(0);
 			return;

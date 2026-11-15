@@ -1,10 +1,11 @@
 /**
- * In-app updates (electron/crux-patch.cjs, owner 2026-11-15): a server zip named in latest.json is checked (size,
- * SHA-256, release link, shell version), unpacked into userData/server-patch/<version>, and used on the next start.
+ * In-app updates (electron/crux-patch.cjs, owner 2026-11-15): a server zip named in latest.json is checked (release
+ * link, size, SHA-256, Ed25519 signature, shell version), unpacked into userData/server-patch/<version>, and used on
+ * the next start. Tests sign with a throwaway key.
  */
 
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -14,6 +15,8 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const patcher = require("../electron/crux-patch.cjs");
+const keys = generateKeyPairSync("ed25519");
+patcher.setPublicKeyForTests(keys.publicKey.export({ type: "spki", format: "pem" }));
 
 const tar = process.platform === "win32" ? path.join(process.env.SystemRoot || "C:\\Windows", "System32", "tar.exe") : "tar";
 const zipAvailable = process.platform !== "win32" || fs.existsSync(tar);
@@ -29,7 +32,9 @@ function makeZip(withServer = true) {
 	return fs.readFileSync(zip);
 }
 const sha = (b: Buffer) => createHash("sha256").update(b).digest("hex");
-const URL0 = `${patcher.RELEASE_DOWNLOADS}v0.6.4/crux-harness-server-0.6.4.zip`;
+const urlFor = (v: string) => `${patcher.RELEASE_DOWNLOADS}v${v}/crux-harness-server-${v}.zip`;
+const signed = (p: Record<string, unknown>) => ({ ...p, sig: sign(null, Buffer.from(patcher.signedText(p)), keys.privateKey).toString("base64") });
+const patchFor = (bytes: Buffer, version = "0.6.4", shell = "0.6.3") => signed({ version, url: urlFor(version), sha256: sha(bytes), size: bytes.length, shell });
 const fake = (bytes: Buffer) => async () => new Response(new Uint8Array(bytes), { status: 200 });
 const userData = () => fs.mkdtempSync(path.join(os.tmpdir(), "crux-patch-user-"));
 
@@ -40,20 +45,32 @@ describe("crux-patch", () => {
 		assert.equal(patcher.compareVersions("0.5.9", "0.6.0"), -1);
 	});
 
-	it("only offers a patch built for this shell, newer than what runs, from a Crux release, with a hash", () => {
-		const good = { version: "0.6.4", url: URL0, sha256: "a".repeat(64), size: 10, shell: "0.6.3" };
+	it("only offers a signed patch for this shell, newer than what runs, from this repo's releases", () => {
+		const good = signed({ version: "0.6.4", url: urlFor("0.6.4"), sha256: "a".repeat(64), size: 10, shell: "0.6.3" });
 		assert.ok(patcher.usablePatch({ patch: good }, "0.6.3", "0.6.3"));
-		assert.equal(patcher.usablePatch({ patch: { ...good, shell: "0.6.2" } }, "0.6.3", "0.6.3"), null);
-		assert.equal(patcher.usablePatch({ patch: good }, "0.6.3", "0.6.4"), null);
-		assert.equal(patcher.usablePatch({ patch: { ...good, url: "https://example.com/x.zip" } }, "0.6.3", "0.6.3"), null);
-		assert.equal(patcher.usablePatch({ patch: { ...good, sha256: "nope" } }, "0.6.3", "0.6.3"), null);
+		assert.equal(patcher.usablePatch({ patch: { ...good, shell: "0.6.2" } }, "0.6.3", "0.6.3"), null, "other shell");
+		assert.equal(patcher.usablePatch({ patch: good }, "0.6.3", "0.6.4"), null, "not newer");
+		assert.equal(patcher.usablePatch({ patch: good }, "0.6.3", "0.6.3", ["0.6.4"]), null, "failed here before");
+		assert.equal(patcher.usablePatch({ patch: { ...good, sig: undefined } }, "0.6.3", "0.6.3"), null, "unsigned");
+		assert.equal(patcher.usablePatch({ patch: { ...good, sha256: "b".repeat(64) } }, "0.6.3", "0.6.3"), null, "hash changed after signing");
+		const other = generateKeyPairSync("ed25519");
+		const forged = { ...good, sig: sign(null, Buffer.from(patcher.signedText(good)), other.privateKey).toString("base64") };
+		assert.equal(patcher.usablePatch({ patch: forged }, "0.6.3", "0.6.3"), null, "signed with another key");
 		assert.equal(patcher.usablePatch({}, "0.6.3", "0.6.3"), null);
+	});
+
+	it("release links: only this repo, after normalising", () => {
+		assert.equal(patcher.releaseUrl(urlFor("0.6.4")), true);
+		assert.equal(patcher.releaseUrl(`${patcher.RELEASE_DOWNLOADS}../../../../evil/repo/releases/download/v1/x.zip`), false);
+		assert.equal(patcher.releaseUrl("https://github.com.evil.com/kkkkenya/crux-desktop/releases/download/v1/x.zip"), false);
+		assert.equal(patcher.releaseUrl("http://github.com/kkkkenya/crux-desktop/releases/download/v1/x.zip"), false);
+		assert.equal(patcher.releaseUrl(`${urlFor("0.6.4")}?x=1`), false);
 	});
 
 	it("installs a good zip and starts from it; the version shown is the patch's", { skip: !zipAvailable }, async () => {
 		const bytes = makeZip();
 		const dir = userData();
-		const done = await patcher.applyPatch({ version: "0.6.4", url: URL0, sha256: sha(bytes), size: bytes.length, shell: "0.6.3" }, { userData: dir, shellVersion: "0.6.3", fetcher: fake(bytes) });
+		const done = await patcher.applyPatch(patchFor(bytes), { userData: dir, shellVersion: "0.6.3", fetcher: fake(bytes) });
 		assert.equal(done.version, "0.6.4");
 		const active = patcher.activePatch(dir, "0.6.3");
 		assert.ok(active && fs.existsSync(active.entry));
@@ -61,19 +78,27 @@ describe("crux-patch", () => {
 		// a newer full install (shell 0.6.5) ignores the old patch
 		assert.equal(patcher.activePatch(dir, "0.6.5"), null);
 		assert.equal(patcher.currentVersion(dir, "0.6.5"), "0.6.5");
-		// a patch that fails to start is switched off
-		patcher.disablePatch(dir);
-		assert.equal(patcher.activePatch(dir, "0.6.3"), null);
 	});
 
-	it("refuses a download that is the wrong size, the wrong hash, or has no server", { skip: !zipAvailable }, async () => {
+	it("a patch that failed to start is switched off and never offered or loaded again", { skip: !zipAvailable }, async () => {
 		const bytes = makeZip();
 		const dir = userData();
-		const patch = { version: "0.6.4", url: URL0, sha256: sha(bytes), size: bytes.length, shell: "0.6.3" };
-		await assert.rejects(patcher.applyPatch({ ...patch, size: bytes.length + 1 }, { userData: dir, shellVersion: "0.6.3", fetcher: fake(bytes) }), /incomplete/);
-		await assert.rejects(patcher.applyPatch({ ...patch, sha256: "b".repeat(64) }, { userData: dir, shellVersion: "0.6.3", fetcher: fake(bytes) }), /didn't match/);
+		await patcher.applyPatch(patchFor(bytes), { userData: dir, shellVersion: "0.6.3", fetcher: fake(bytes) });
+		patcher.disablePatch(dir);
+		assert.equal(patcher.activePatch(dir, "0.6.3"), null);
+		assert.deepEqual(patcher.failedVersions(dir), ["0.6.4"]);
+		await assert.rejects(patcher.applyPatch(patchFor(bytes), { userData: dir, shellVersion: "0.6.3", fetcher: fake(bytes) }), /can't be installed/);
+	});
+
+	it("refuses a download that is the wrong size, the wrong bytes, or has no server, and leaves nothing behind", { skip: !zipAvailable }, async () => {
+		const bytes = makeZip();
+		const dir = userData();
+		const p = patchFor(bytes);
+		await assert.rejects(patcher.applyPatch(p, { userData: dir, shellVersion: "0.6.3", fetcher: fake(Buffer.concat([bytes, Buffer.from("x")])) }), /incomplete/);
+		const swapped = Buffer.from(bytes); swapped[swapped.length - 1] ^= 1;
+		await assert.rejects(patcher.applyPatch(p, { userData: dir, shellVersion: "0.6.3", fetcher: fake(swapped) }), /didn't match/);
 		const empty = makeZip(false);
-		await assert.rejects(patcher.applyPatch({ ...patch, sha256: sha(empty), size: empty.length }, { userData: dir, shellVersion: "0.6.3", fetcher: fake(empty) }), /missing its server/);
+		await assert.rejects(patcher.applyPatch(patchFor(empty), { userData: dir, shellVersion: "0.6.3", fetcher: fake(empty) }), /missing its server/);
 		assert.equal(patcher.activePatch(dir, "0.6.3"), null);
 		assert.ok(!fs.readdirSync(path.join(dir, "server-patch")).some((n) => n.startsWith("incoming-")), "no unpacking leftovers");
 	});
@@ -81,9 +106,8 @@ describe("crux-patch", () => {
 	it("an older patch folder is removed once a newer one is in", { skip: !zipAvailable }, async () => {
 		const bytes = makeZip();
 		const dir = userData();
-		await patcher.applyPatch({ version: "0.6.4", url: URL0, sha256: sha(bytes), size: bytes.length, shell: "0.6.3" }, { userData: dir, shellVersion: "0.6.3", fetcher: fake(bytes) });
-		const url5 = URL0.replace(/0\.6\.4/g, "0.6.5");
-		await patcher.applyPatch({ version: "0.6.5", url: url5, sha256: sha(bytes), size: bytes.length, shell: "0.6.3" }, { userData: dir, shellVersion: "0.6.3", fetcher: fake(bytes) });
+		await patcher.applyPatch(patchFor(bytes), { userData: dir, shellVersion: "0.6.3", fetcher: fake(bytes) });
+		await patcher.applyPatch(patchFor(bytes, "0.6.5"), { userData: dir, shellVersion: "0.6.3", fetcher: fake(bytes) });
 		assert.equal(patcher.currentVersion(dir, "0.6.3"), "0.6.5");
 		assert.ok(!fs.existsSync(path.join(dir, "server-patch", "0.6.4")));
 	});

@@ -17,7 +17,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
-const { applyPatch, currentVersion, usablePatch } = require("./crux-patch.cjs");
+const { applyPatch, currentVersion, failedVersions, usablePatch } = require("./crux-patch.cjs");
 
 const ORIGIN = (process.env.CRUX_ORIGIN || "https://crux.engineeringhub.site").replace(/\/+$/, "");
 const PARTITION = "persist:crux-account";
@@ -522,7 +522,7 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 		const url = typeof latest?.url === "string" ? latest.url : "";
 		if (!/^\d+\.\d+\.\d+$/.test(version) || !url.startsWith(RELEASES)) return { available: false };
 		const current = currentVersion(app.getPath("userData"), app.getVersion());
-		const patch = usablePatch(latest, app.getVersion(), current);
+		const patch = usablePatch(latest, app.getVersion(), current, failedVersions(app.getPath("userData")));
 		return { available: newerVersion(version, current), version, current, url, notes: text(latest.notes, 300), patch: Boolean(patch) };
 	}
 	// "Update now": the server zip named in latest.json, installed in place, then a restart (electron/crux-patch.cjs).
