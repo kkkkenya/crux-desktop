@@ -95,7 +95,7 @@ describe("crux-patch", () => {
 		const dir = userData();
 		const p = patchFor(bytes);
 		await assert.rejects(patcher.applyPatch(p, { userData: dir, shellVersion: "0.6.3", fetcher: fake(Buffer.concat([bytes, Buffer.from("x")])) }), /incomplete/);
-		const swapped = Buffer.from(bytes); swapped[swapped.length - 1] ^= 1;
+		const swapped = Buffer.from(bytes); const last = swapped.length - 1; swapped.writeUInt8(swapped.readUInt8(last) ^ 1, last);
 		await assert.rejects(patcher.applyPatch(p, { userData: dir, shellVersion: "0.6.3", fetcher: fake(swapped) }), /didn't match/);
 		const empty = makeZip(false);
 		await assert.rejects(patcher.applyPatch(patchFor(empty), { userData: dir, shellVersion: "0.6.3", fetcher: fake(empty) }), /missing its server/);
