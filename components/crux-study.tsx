@@ -635,10 +635,20 @@ export function TopContributors({ bridge }: { bridge: CruxBridge }) {
 
 const SKIPPED = "crux:update-later";
 
-/** "A new version of Crux is out": checked once on start. "Later" hides that version until the next one. */
+/** "A new version of Crux Harness is out": checked once on start. "Later" hides that version until the next one.
+ *  When the release has an in-app update (patch), "Update now" installs it and restarts; else "Download" opens the
+ *  installer. */
+export function updateCopy(update: CruxUpdate): { title: string; body: string; action: string } {
+	const notes = update.notes ? `${update.notes} ` : "";
+	return update.patch
+		? { title: `Crux Harness ${update.version} is out`, body: `You have ${update.current}. ${notes}Update now: it takes a minute and Crux Harness restarts by itself. Your sessions and notes stay.`, action: "Update now" }
+		: { title: `Crux Harness ${update.version} is out`, body: `You have ${update.current}. ${notes}Download it and run the installer; your sessions and notes stay.`, action: "Download" };
+}
+
 export function CruxUpdateNotice() {
 	const [update, setUpdate] = useState<CruxUpdate | null>(null);
 	const [problem, setProblem] = useState("");
+	const [updating, setUpdating] = useState(false);
 	useEffect(() => {
 		const bridge = cruxBridge();
 		if (!bridge?.updateCheck) return;
@@ -651,21 +661,33 @@ export function CruxUpdateNotice() {
 		return () => { live = false; };
 	}, []);
 	if (!update?.url) return null;
+	const copy = updateCopy(update);
 	const download = async () => {
 		const reply = await cruxBridge()?.openUpdate(update.url!).catch(() => null);
 		if (!reply || !reply.ok) setProblem(reply && !reply.ok ? reply.error : "The download didn't open.");
 	};
+	const updateNow = async () => {
+		const bridge = cruxBridge();
+		if (!bridge?.applyUpdate) { void download(); return; }
+		setUpdating(true); setProblem("");
+		const reply = await bridge.applyUpdate().catch(() => null);
+		if (!reply || !reply.ok) { setUpdating(false); setProblem(reply && !reply.ok ? reply.error : "The update failed. Try again, or choose Download."); }
+	};
 	return (
 		<div role="status" data-testid="crux-update"
 			className="crux-glass lh-no-drag fixed bottom-5 right-5 z-50 w-80 rounded-xl p-4 text-sm shadow-2xl">
-			<p className="font-medium">Crux {update.version} is out</p>
-			<p className="mt-1 text-xs text-muted-foreground">
-				You have {update.current}. {update.notes ? `${update.notes} ` : ""}Download it and run the installer; your sessions and notes stay.
-			</p>
+			<p className="font-medium">{copy.title}</p>
+			<p className="mt-1 text-xs text-muted-foreground">{updating ? "Updating. Crux Harness restarts by itself in a minute." : copy.body}</p>
 			{problem && <p role="alert" className="mt-2 text-xs text-destructive">{problem}</p>}
 			<div className="mt-3 flex gap-2">
-				<Button type="button" size="xs" className="cursor-pointer" onClick={() => void download()} data-testid="crux-update-download">Download</Button>
-				<Button type="button" size="xs" variant="ghost" className="cursor-pointer" onClick={() => { write(SKIPPED, update.version!); setUpdate(null); }}>Later</Button>
+				{update.patch ? (
+					<Button type="button" size="xs" className="cursor-pointer disabled:cursor-not-allowed" disabled={updating} aria-busy={updating} onClick={() => void updateNow()} data-testid="crux-update-now">
+						{updating && <BrailleSpinner label="Updating" />}{copy.action}
+					</Button>
+				) : (
+					<Button type="button" size="xs" className="cursor-pointer" onClick={() => void download()} data-testid="crux-update-download">Download</Button>
+				)}
+				<Button type="button" size="xs" variant="ghost" className="cursor-pointer" disabled={updating} onClick={() => { write(SKIPPED, update.version!); setUpdate(null); }}>Later</Button>
 			</div>
 		</div>
 	);

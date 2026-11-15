@@ -33,6 +33,7 @@ const { attachSubscriptionChild, subscriptionControl } = require("./subscription
 const { desktopAPIHeaders } = require("./desktop-api.cjs");
 const { openWebSubscriptionBrowser } = require("./web-subscription-browser.cjs");
 const { createCruxHub, cruxControl, attachCruxChild } = require("./crux-hub.cjs");
+const { activePatch, cleanOld, disablePatch } = require("./crux-patch.cjs");
 const { randomBytes } = require("node:crypto");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
@@ -63,6 +64,9 @@ const DATA_DIR = () => path.join(app.getPath("userData"), "data");
  *  In dev LH_DEV_URL short-circuits everything: no spawn, no packaging —
  *  the window points at the running `next dev` server (full HMR). */
 function serverEntry() {
+	// An update installed from inside the app (electron/crux-patch.cjs) runs from userData/server-patch.
+	const patch = app.isPackaged ? activePatch(app.getPath("userData"), app.getVersion()) : null;
+	if (patch) return patch.entry;
 	// extraResources ships the whole .next payload under server/standalone/
 	// (copied from .next with an explicit filter — see electron-builder.yml).
 	return path.join(process.resourcesPath, "server", "standalone", "server.js");
@@ -710,10 +714,23 @@ async function main() {
 			},
 		});
 		await subscriptions.ready;
-		log(`starting server: ${serverEntry()}`);
+		const patch = app.isPackaged ? activePatch(app.getPath("userData"), app.getVersion()) : null;
+		if (app.isPackaged) cleanOld(app.getPath("userData"), patch?.version);
+		log(`starting server: ${serverEntry()}${patch ? ` (update ${patch.version})` : ""}`);
 		log(`data dir: ${DATA_DIR()}${fs.existsSync(AUTH_FILE()) ? " · auth.json: present" : " · auth.json: ABSENT (no BYOK keys yet)"}`);
-		await startServer(new URL(url).port);
-		await waitUntilUp(url);
+		try {
+			await startServer(new URL(url).port);
+			await waitUntilUp(url);
+		} catch (err) {
+			if (!patch) throw err;
+			// An update that does not start is switched off; the installed server takes over on the restart.
+			log(`update ${patch.version} did not start (${err?.message ?? err}); going back to the installed version`);
+			disablePatch(app.getPath("userData"));
+			killServer();
+			app.relaunch();
+			app.exit(0);
+			return;
+		}
 		log(`server up: ${url}`);
 	} else {
 		log(`dev mode: ${devUrl}`);

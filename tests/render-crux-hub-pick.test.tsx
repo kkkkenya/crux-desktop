@@ -38,3 +38,17 @@ describe("Hub file row page count", () => {
 		assert.match(html, /3 pages/);
 	});
 });
+
+describe("new-version notice copy", async () => {
+	const { updateCopy } = await import("@/components/crux-study");
+	it("an in-app update says Update now and that the app restarts by itself", () => {
+		const c = updateCopy({ available: true, version: "0.6.4", current: "0.6.3", patch: true });
+		assert.equal(c.action, "Update now");
+		assert.match(c.body, /restarts by itself/);
+	});
+	it("an installer release says Download", () => {
+		const c = updateCopy({ available: true, version: "0.7.0", current: "0.6.3", patch: false });
+		assert.equal(c.action, "Download");
+		assert.match(c.body, /installer/);
+	});
+});

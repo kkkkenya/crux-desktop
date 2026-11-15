@@ -101,6 +101,7 @@ contextBridge.exposeInMainWorld("lh", {
 		share: (request) => ipcRenderer.invoke("lh:crux:control", { op: "share", request }),
 		updateCheck: () => ipcRenderer.invoke("lh:crux:control", { op: "updateCheck" }),
 		openUpdate: (url) => ipcRenderer.invoke("lh:crux:control", { op: "openUpdate", url }),
+		applyUpdate: () => ipcRenderer.invoke("lh:crux:control", { op: "applyUpdate" }),
 	},
 	expandWindow: () => ipcRenderer.send("lh:expand-window"),
 	onZoom: (cb) => {

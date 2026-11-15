@@ -17,6 +17,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
+const { applyPatch, currentVersion, usablePatch } = require("./crux-patch.cjs");
 
 const ORIGIN = (process.env.CRUX_ORIGIN || "https://crux.engineeringhub.site").replace(/\/+$/, "");
 const PARTITION = "persist:crux-account";
@@ -32,7 +33,7 @@ const OPS = new Set([
 	// Sharing a file with the class, and the contributor board.
 	"uploads", "contributors", "share",
 	// The new-version notice.
-	"updateCheck", "openUpdate",
+	"updateCheck", "openUpdate", "applyUpdate",
 ]);
 const ID = /^[\w-]{1,40}$/;
 const UNIT = /^[A-Z]{2,5} ?\d{3}[A-Z]?$/;
@@ -520,8 +521,26 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 		const version = typeof latest?.version === "string" ? latest.version.trim() : "";
 		const url = typeof latest?.url === "string" ? latest.url : "";
 		if (!/^\d+\.\d+\.\d+$/.test(version) || !url.startsWith(RELEASES)) return { available: false };
-		const current = app.getVersion();
-		return { available: newerVersion(version, current), version, current, url, notes: text(latest.notes, 300) };
+		const current = currentVersion(app.getPath("userData"), app.getVersion());
+		const patch = usablePatch(latest, app.getVersion(), current);
+		return { available: newerVersion(version, current), version, current, url, notes: text(latest.notes, 300), patch: Boolean(patch) };
+	}
+	// "Update now": the server zip named in latest.json, installed in place, then a restart (electron/crux-patch.cjs).
+	async function applyUpdate() {
+		let latest;
+		try {
+			const response = await fetch(`${ORIGIN}/desktop/latest.json`, { headers: { accept: "application/json" }, cache: "no-store", redirect: "error" });
+			latest = response.ok ? await response.json() : null;
+		} catch { throw new CruxError("offline", "Crux could not check for the update. Check your connection and try again."); }
+		if (!latest?.patch) throw new CruxError("failed", "This update needs the installer. Choose Download instead.");
+		try {
+			const done = await applyPatch(latest.patch, { userData: app.getPath("userData"), shellVersion: app.getVersion() });
+			log?.(`update ${done.version} installed; restarting`);
+		} catch (err) {
+			throw new CruxError("failed", err?.message || "The update failed.");
+		}
+		setTimeout(() => { app.relaunch(); app.quit(); }, 300);
+		return true;
 	}
 	// The relay key for hosted models (study/server/ai-relay.js): 12 hours, fetched again 10 minutes before it ends.
 	let aiKey = null;
@@ -539,7 +558,7 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 		return true;
 	}
 
-	return { status, login, logout, units, files, download, reveal, hubRoot, study, catalog, saveSetup, skipSetup, addNote, removeNote, learn, makeGuide, openAt, uploads, contributors, share, updateCheck, openUpdate, aiToken };
+	return { status, login, logout, units, files, download, reveal, hubRoot, study, catalog, saveSetup, skipSetup, addNote, removeNote, learn, makeGuide, openAt, uploads, contributors, share, updateCheck, openUpdate, applyUpdate, aiToken };
 }
 
 /** Renderer commands. The caller has already checked the sender is the trusted app window. */
@@ -568,6 +587,7 @@ async function cruxControl(command, hub, parentWindow) {
 			case "share": return { ok: true, value: await hub.share(command.request) };
 			case "updateCheck": return { ok: true, value: await hub.updateCheck() };
 			case "openUpdate": return { ok: true, value: await hub.openUpdate(command.url) };
+			case "applyUpdate": return { ok: true, value: await hub.applyUpdate() };
 		}
 	} catch (err) {
 		// Errors cross IPC as data so the renderer can show the reason and react to the code.

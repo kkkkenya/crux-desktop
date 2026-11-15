@@ -45,10 +45,12 @@ export interface CruxBridge {
 	share: (request: { unit: string; name: string; bytes: Uint8Array; consent: boolean }) => Promise<CruxReply<CruxUploads>>;
 	updateCheck: () => Promise<CruxReply<CruxUpdate>>;
 	openUpdate: (url: string) => Promise<CruxReply<boolean>>;
+	applyUpdate?: () => Promise<CruxReply<boolean>>;
 }
 export interface CruxUploads { files: { name: string; status: string; at: string }[]; credits: { count: number; goal: number; until: string | null; premium: boolean; earned: boolean } }
 export interface CruxContributors { top: { name: string; files: number; you: boolean; medal: boolean; avatar: string | null }[]; you: { rank: number; files: number } | null; goal: number }
-export interface CruxUpdate { available: boolean; version?: string; current?: string; url?: string; notes?: string }
+/** patch: the update installs from inside the app ("Update now"), no installer needed. */
+export interface CruxUpdate { available: boolean; version?: string; current?: string; url?: string; notes?: string; patch?: boolean }
 export interface CruxNote { id: string; text: string; unit: string | null; from: string; at: string }
 export interface CruxStudy {
 	units: (CruxUnit & { catDate: string | null })[];
