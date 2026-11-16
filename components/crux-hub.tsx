@@ -16,11 +16,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { ShareWithClass, TopContributors } from "@/components/crux-study";
+import { CruxJoinHelp } from "@/components/crux-join";
 
 export type CruxReply<T> = { ok: true; value: T } | { ok: false; code: string; error: string; resetsAt?: string | null };
 export interface CruxStatus { signedIn: boolean; name?: string; tier?: string; avatar?: string; problem?: string; offline?: boolean }
 export interface CruxUnit { code: string; title: string }
 export interface CruxFile { id: string; name: string; paper: boolean; pages: number | null; path: string | null }
+/** A unit's marking schemes beside their papers, the papers with none yet, and pages saved on this computer. */
+export interface CruxSchemes { schemes: { id: string; name: string; paper: string | null }[]; missing: { id: string; name: string }[]; saved: CruxLocalFile[]; note: string | null }
+/** A file saved in Documents/Crux/Hub/<unit>; solution = a marking scheme or solutions pack. */
+export interface CruxLocalFile { name: string; path: string; kind: "pdf" | "html" | "md"; solution: boolean }
 /** The preload bridge (electron/preload.cjs → electron/crux-hub.cjs). Desktop only. */
 export interface CruxBridge {
 	status: () => Promise<CruxReply<CruxStatus>>;
@@ -40,6 +45,15 @@ export interface CruxBridge {
 	learn: (unit: string, topicId: string) => Promise<CruxReply<CruxLearn>>;
 	makeGuide: (unit: string, topicId: string, fresh?: boolean) => Promise<CruxReply<CruxGuide>>;
 	openAt: (unit: string, id: string, name: string, page: number | null) => Promise<CruxReply<{ path: string; left: number | null }>>;
+	// The Files chip (components/crux-files.tsx): a unit's saved files, opened beside the lesson.
+	local?: (unit: string) => Promise<CruxReply<CruxLocalFile[]>>;
+	openLocal?: (path: string, page: number | null) => Promise<CruxReply<{ path: string }>>;
+	// Crux's own viewer (components/crux-reader.tsx): a saved file's bytes, and files the tutor saved to open.
+	bytes?: (path: string) => Promise<CruxReply<{ bytes: Uint8Array; kind: "pdf" | "html"; safe: boolean }>>;
+	onOpen?: (cb: (file: { path: string; name: string }) => void) => () => void;
+	// Marking schemes (components/crux-schemes.tsx)
+	schemes?: (unit: string) => Promise<CruxReply<CruxSchemes>>;
+	askScheme?: (unit: string, paperId: string) => Promise<CruxReply<{ asked: boolean }>>;
 	uploads: (unit: string) => Promise<CruxReply<CruxUploads>>;
 	contributors: () => Promise<CruxReply<CruxContributors>>;
 	share: (request: { unit: string; name: string; bytes: Uint8Array; consent: boolean }) => Promise<CruxReply<CruxUploads>>;
@@ -289,6 +303,7 @@ export function HubDialog({ bridge, onClose }: { bridge: CruxBridge | undefined;
 								{busy === "sign-in" && <BrailleSpinner label="Waiting for sign-in" />}
 								Sign in with Discord
 							</Button>
+							<CruxJoinHelp open={Boolean(status.problem)} />
 						</div>
 					) : (
 						<div className="flex flex-col gap-5">

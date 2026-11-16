@@ -96,6 +96,17 @@ contextBridge.exposeInMainWorld("lh", {
 		learn: (unit, topicId) => ipcRenderer.invoke("lh:crux:control", { op: "learn", unit, topicId }),
 		makeGuide: (unit, topicId, fresh) => ipcRenderer.invoke("lh:crux:control", { op: "makeGuide", unit, topicId, fresh }),
 		openAt: (unit, id, name, page) => ipcRenderer.invoke("lh:crux:control", { op: "openAt", unit, id, name, page }),
+		local: (unit) => ipcRenderer.invoke("lh:crux:control", { op: "local", unit }),
+		openLocal: (path, page) => ipcRenderer.invoke("lh:crux:control", { op: "openLocal", path, page }),
+		bytes: (path) => ipcRenderer.invoke("lh:crux:control", { op: "bytes", path }),
+		schemes: (unit) => ipcRenderer.invoke("lh:crux:control", { op: "schemes", unit }),
+		askScheme: (unit, paperId) => ipcRenderer.invoke("lh:crux:control", { op: "askScheme", unit, paperId }),
+		// A file the tutor saved (solution_page), to open as a tab in Crux's viewer.
+		onOpen: (cb) => {
+			const listener = (_event, file) => cb(file);
+			ipcRenderer.on("lh:crux:open", listener);
+			return () => ipcRenderer.removeListener("lh:crux:open", listener);
+		},
 		uploads: (unit) => ipcRenderer.invoke("lh:crux:control", { op: "uploads", unit }),
 		contributors: () => ipcRenderer.invoke("lh:crux:control", { op: "contributors" }),
 		share: (request) => ipcRenderer.invoke("lh:crux:control", { op: "share", request }),

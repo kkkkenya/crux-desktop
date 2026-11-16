@@ -24,6 +24,7 @@ import { lsTool } from "./tools/ls.ts";
 import { findTool } from "./tools/find.ts";
 import { grepTool } from "./tools/grep.ts";
 import { hubTools } from "./tools/hub.ts";
+import { solutionTool } from "./tools/solution.ts";
 import { cruxDesktopConnected } from "./crux-bridge.ts";
 import { createShowImageTool } from "./tools/show-image.ts";
 import { healToolRecord } from "./tools/heal.ts";
@@ -465,6 +466,8 @@ export function createTeacherTools(
 			grep: grepTool,
 			// Crux: the Study Hub's notes and past papers, desktop app only.
 			...(cruxDesktopConnected() ? hubTools : {}),
+			// Crux: a marking scheme as one HTML page with SVG free body diagrams (teacher only).
+			...(cruxDesktopConnected() ? { solution_page: solutionTool } : {}),
 			// The learner-image display twin of read (issue #363): teacher
 			// only, always on — it shows the learner their own file.
 			show_image: createShowImageTool(ctx),

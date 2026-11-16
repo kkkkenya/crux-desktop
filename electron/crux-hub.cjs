@@ -18,6 +18,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { applyPatch, currentVersion, failedVersions, usablePatch } = require("./crux-patch.cjs");
+const { solutionProblems, withPolicy, isSolutionPage, solutionFileName } = require("./solution-page.cjs");
 
 const ORIGIN = (process.env.CRUX_ORIGIN || "https://crux.engineeringhub.site").replace(/\/+$/, "");
 const PARTITION = "persist:crux-account";
@@ -30,6 +31,10 @@ const OPS = new Set([
 	"status", "login", "logout", "units", "files", "download", "reveal",
 	// Study setup, the notes panel and "open in book" (2026-11-12).
 	"study", "catalog", "saveSetup", "skipSetup", "addNote", "removeNote", "learn", "makeGuide", "openAt",
+	// The Files chip in the session's top bar: a unit's saved files, opened beside the lesson (2026-11-16).
+	"local", "openLocal", "bytes",
+	// Marking schemes: a unit's schemes beside their papers, and asking for a missing one (2026-11-17).
+	"schemes", "askScheme",
 	// Sharing a file with the class, and the contributor board.
 	"uploads", "contributors", "share",
 	// The new-version notice.
@@ -411,43 +416,169 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 	}
 
 	// "Open in book · p. 112": the hub file, downloaded once, in a reader window at that page.
-	// PDFs open in Chromium's own viewer inside Crux; anything else in the computer's own app.
+	// PDFs and solution pages (HTML) open in a reader window inside Crux; anything else in the computer's own app.
 	const readers = new Map();
+	const READABLE = /\.(pdf|html?)$/i;
 	async function openAt(unit, id, name, page) {
 		if (!UNIT.test(String(unit))) throw new CruxError("bad-request", "That file can't be opened.");
 		const file = await download(unit, id, name);
+		await openFile(file.path, page);
+		return { path: file.path, left: file.left };
+	}
+
+	/** The resolved path of a file that exists inside the Hub folder, or null. */
+	function inHub(target) {
+		const root = hubRoot();
+		const resolved = path.resolve(String(target ?? ""));
+		const rel = path.relative(root, resolved);
+		if (!rel || rel.startsWith("..") || path.isAbsolute(rel) || !fs.existsSync(resolved)) return null;
+		return resolved;
+	}
+
+	/** Where a new reader goes: the right part of the screen the lesson is on, so both stay in view. */
+	function readerBounds() {
+		try {
+			// The lesson window: any open window that is not a reader (the focused one may be a reader, or none).
+			const mine = new Set(readers.values());
+			const main = (BrowserWindow.getAllWindows?.() ?? []).find((w) => !mine.has(w) && !w.isDestroyed()) ?? null;
+			const area = main ? require("electron").screen.getDisplayMatching(main.getBounds()).workArea : null;
+			if (area) {
+				const width = Math.max(560, Math.round(area.width * 0.45));
+				return { x: area.x + area.width - width, y: area.y, width, height: area.height };
+			}
+		} catch { /* tests and odd displays: the default size */ }
+		return { width: 1000, height: 900 };
+	}
+
+	async function openFile(target, page) {
 		const at = Number.isInteger(page) && page > 0 && page < 100000 ? page : null;
-		if (!/\.pdf$/i.test(file.path)) {
-			const problem = await shell.openPath(file.path);
+		// HTML opens in the reader only when Crux saved it with its policy; any other page goes to the browser as before.
+		const html = /\.html?$/i.test(target);
+		let pageOk = true;
+		if (html) { try { pageOk = isSolutionPage(fs.readFileSync(target, "utf8").slice(0, 2000)); } catch { pageOk = false; } }
+		if (!READABLE.test(target) || !pageOk) {
+			const problem = await shell.openPath(target);
 			if (problem) throw new CruxError("failed", `The file could not be opened: ${problem}`);
-			return { path: file.path, left: file.left };
+			return;
 		}
-		const url = `${pathToFileURL(file.path).href}${at ? `#page=${at}` : ""}`;
-		const existing = readers.get(file.path);
+		const pdf = /\.pdf$/i.test(target);
+		const url = `${pathToFileURL(target).href}${at && pdf ? `#page=${at}` : ""}`;
+		const existing = readers.get(target);
 		if (existing && !existing.isDestroyed()) {
 			void existing.loadURL(url).catch(() => {});
 			existing.focus();
-			return { path: file.path, left: file.left };
+			return;
 		}
 		const win = new BrowserWindow({
-			width: 1000, height: 900, title: path.basename(file.path), autoHideMenuBar: true, backgroundColor: "#120e0c",
+			...readerBounds(), title: path.basename(target), autoHideMenuBar: true, backgroundColor: pdf ? "#120e0c" : "#ffffff",
 			webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false, plugins: true, partition: "crux-reader" },
 		});
-		readers.set(file.path, win);
-		win.on("closed", () => readers.delete(file.path));
+		readers.set(target, win);
+		win.on("closed", () => readers.delete(target));
 		// The reader shows this one file: links in it open in the browser, nothing else loads here.
 		const home = url.split("#")[0];
-		win.webContents.on("will-navigate", (event, target) => {
-			if (String(target).split("#")[0] === home) return;
+		win.webContents.on("will-navigate", (event, next) => {
+			if (String(next).split("#")[0] === home) return;
 			event.preventDefault();
-			if (/^https:\/\//i.test(String(target))) void shell.openExternal(target).catch(() => {});
+			if (/^https:\/\//i.test(String(next))) void shell.openExternal(next).catch(() => {});
 		});
-		win.webContents.setWindowOpenHandler(({ url: target }) => {
-			if (/^https:\/\//i.test(target)) void shell.openExternal(target).catch(() => {});
+		win.webContents.setWindowOpenHandler(({ url: next }) => {
+			if (/^https:\/\//i.test(next)) void shell.openExternal(next).catch(() => {});
 			return { action: "deny" };
 		});
 		void win.loadURL(url).catch((err) => log(`crux reader: ${err?.message ?? err}`));
-		return { path: file.path, left: file.left };
+	}
+
+	/** The PDFs, solution pages and Markdown packs saved for a unit on this computer: solutions first, then newest. */
+	function local(unit) {
+		if (!UNIT.test(String(unit))) throw new CruxError("bad-request", "Pick a unit first.");
+		const dir = path.join(hubRoot(), safeSegment(unit, "unit"));
+		const found = [];
+		const walk = (folder, depth) => {
+			let entries = [];
+			try { entries = fs.readdirSync(folder, { withFileTypes: true }); } catch { return; }
+			for (const e of entries) {
+				const full = path.join(folder, e.name);
+				if (e.isDirectory() && depth < 2) walk(full, depth + 1);
+				else if (e.isFile() && /\.(pdf|html?|md)$/i.test(e.name)) {
+					let at = 0;
+					try { at = fs.statSync(full).mtimeMs; } catch { /* listed without a date */ }
+					found.push({
+						name: e.name.replace(/ \[\d+\](?=\.[^.]+$)/, ""),
+						path: full,
+						kind: /\.pdf$/i.test(e.name) ? "pdf" : /\.md$/i.test(e.name) ? "md" : "html",
+						solution: /solutions?|marking scheme/i.test(path.relative(dir, full)),
+						at,
+					});
+				}
+			}
+		};
+		walk(dir, 0);
+		return found.sort((a, b) => Number(b.solution) - Number(a.solution) || b.at - a.at).slice(0, 200)
+			.map(({ name, path: p, kind, solution }) => ({ name, path: p, kind, solution }));
+	}
+
+	/** Tell the lesson windows to open a saved file as a tab in Crux's viewer (components/crux-reader.tsx). */
+	function showInCrux(target) {
+		const mine = new Set(readers.values());
+		const wins = (BrowserWindow.getAllWindows?.() ?? []).filter((w) => !mine.has(w) && !w.isDestroyed());
+		for (const w of wins) w.webContents.send("lh:crux:open", { path: target, name: path.basename(target) });
+		return wins.length > 0;
+	}
+
+	/** A saved PDF or solution page's bytes, for Crux's own viewer. Only files inside the Hub folder. */
+	function bytes(target) {
+		const file = inHub(target);
+		if (!file || !/\.(pdf|html?)$/i.test(file)) throw new CruxError("bad-request", "That file isn't in the Hub folder.");
+		const size = fs.statSync(file).size;
+		if (size > MAX_FILE_BYTES) throw new CruxError("failed", "That file is too large to show here.");
+		const data = fs.readFileSync(file);
+		// A page Crux did not save carries no policy: the viewer shows those in the browser instead.
+		const html = /\.html?$/i.test(file);
+		// a copy of exactly this file: a small read can sit in Node's shared buffer pool, which must not reach the window
+		return { bytes: new Uint8Array(data), kind: html ? "html" : "pdf", safe: !html || isSolutionPage(data.toString("utf8", 0, 2000)) };
+	}
+
+	/** A unit's marking schemes from the hub (study/server/schemes.js), plus the pages saved on this computer. */
+	async function schemes(unit) {
+		if (!UNIT.test(String(unit))) throw new CruxError("bad-request", "Pick a unit first.");
+		const r = await api(`/api/schemes?unit=${encodeURIComponent(unit)}`);
+		const row = (f) => f && /^\d+$/.test(String(f.id)) && typeof f.name === "string";
+		return {
+			schemes: list(r?.schemes).filter(row).map((f) => ({ id: String(f.id), name: f.name, paper: typeof f.paper === "string" ? f.paper : null })),
+			missing: list(r?.missing).filter(row).map((f) => ({ id: String(f.id), name: f.name })),
+			saved: local(unit).filter((f) => f.solution && f.kind !== "md"),
+			note: typeof r?.note === "string" ? r.note : null,
+		};
+	}
+
+	async function askScheme(unit, paperId) {
+		if (!UNIT.test(String(unit)) || !/^\d{1,12}$/.test(String(paperId ?? ""))) throw new CruxError("bad-request", "Pick a paper first.");
+		const r = await api("/api/schemes/ask", "POST", { unit, paperId: String(paperId) });
+		return { asked: r?.asked === true };
+	}
+
+	async function openLocal(target, page) {
+		const file = inHub(target);
+		if (!file || !/\.(pdf|html?|md)$/i.test(file)) throw new CruxError("bad-request", "That file isn't in the Hub folder.");
+		await openFile(file, page);
+		return { path: file };
+	}
+
+	/** Save a solution page the tutor wrote (checked in solution-page.cjs) and open it beside the lesson. */
+	async function saveSolution(unit, title, html) {
+		if (!UNIT.test(String(unit))) throw new CruxError("bad-request", `"${unit}" is not a unit code.`);
+		const problems = solutionProblems(html);
+		if (problems.length) throw new CruxError("bad-request", `The page was not saved. Fix: ${problems.join(" ")}`);
+		const dir = path.join(hubRoot(), safeSegment(unit, "unit"), "Solutions");
+		fs.mkdirSync(dir, { recursive: true });
+		const target = path.join(dir, solutionFileName(title));
+		const partial = `${target}.${process.pid}.${Date.now()}.part`;
+		fs.writeFileSync(partial, withPolicy(html), "utf8");
+		fs.renameSync(partial, target);
+		// Open it as a tab in Crux's own viewer; with no Crux window listening, in the reader window.
+		if (!showInCrux(target)) await openFile(target, null).catch((err) => log(`crux reader: ${err?.message ?? err}`));
+		return { path: target };
 	}
 
 	// ---- Share a file with the class, with the student's consent (2026-11-12) ----
@@ -558,7 +689,7 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 		return true;
 	}
 
-	return { status, login, logout, units, files, download, reveal, hubRoot, study, catalog, saveSetup, skipSetup, addNote, removeNote, learn, makeGuide, openAt, uploads, contributors, share, updateCheck, openUpdate, applyUpdate, aiToken };
+	return { status, login, logout, units, files, download, reveal, hubRoot, study, catalog, saveSetup, skipSetup, addNote, removeNote, learn, makeGuide, openAt, local, openLocal, bytes, schemes, askScheme, saveSolution, uploads, contributors, share, updateCheck, openUpdate, applyUpdate, aiToken };
 }
 
 /** Renderer commands. The caller has already checked the sender is the trusted app window. */
@@ -582,6 +713,11 @@ async function cruxControl(command, hub, parentWindow) {
 			case "learn": return { ok: true, value: await hub.learn(command.unit, command.topicId) };
 			case "makeGuide": return { ok: true, value: await hub.makeGuide(command.unit, command.topicId, command.fresh) };
 			case "openAt": return { ok: true, value: await hub.openAt(command.unit, command.id, command.name, command.page) };
+			case "local": return { ok: true, value: hub.local(command.unit) };
+			case "openLocal": return { ok: true, value: await hub.openLocal(command.path, command.page) };
+			case "bytes": return { ok: true, value: hub.bytes(command.path) };
+			case "schemes": return { ok: true, value: await hub.schemes(command.unit) };
+			case "askScheme": return { ok: true, value: await hub.askScheme(command.unit, command.paperId) };
 			case "uploads": return { ok: true, value: await hub.uploads(command.unit) };
 			case "contributors": return { ok: true, value: await hub.contributors() };
 			case "share": return { ok: true, value: await hub.share(command.request) };
@@ -599,7 +735,7 @@ async function cruxControl(command, hub, parentWindow) {
 /*
  * The tutor's hub tools (src/agent/tools/hub.ts) run in the local server child.
  * They ask over the child's private IPC channel; the Crux session stays here.
- * Three questions only: the student's units, a unit's hub files, and one file
+ * The student's units, a unit's hub files, saving a checked solution page, and one file
  * downloaded to the Hub folder (its local path comes back, nothing else).
  */
 function attachCruxChild(child, getHub) {
@@ -614,6 +750,11 @@ function attachCruxChild(child, getHub) {
 		else if (op === "units") reply = await cruxControl({ op: "units" }, hub, null);
 		else if (op === "files") reply = await cruxControl({ op: "files", unit: message.unit }, hub, null);
 		else if (op === "download") reply = await cruxControl({ op: "download", unit: message.unit, id: message.fileId, name: message.name }, hub, null);
+		// A solution page the tutor wrote: checked, saved to the unit's Solutions folder and opened beside the lesson.
+		else if (op === "saveSolution") {
+			try { reply = { ok: true, value: await hub.saveSolution(message.unit, message.title, message.html) }; }
+			catch (err) { reply = { ok: false, code: err?.code ?? "failed", error: err?.code ? err.message : "The solution page could not be saved." }; }
+		}
 		// The relay key goes to the local server only, never to the window.
 		else if (op === "aiToken") {
 			try { reply = { ok: true, value: await hub.aiToken() }; }

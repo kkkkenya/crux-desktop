@@ -10,6 +10,7 @@
  * recent sign-in keeps working without a connection for a week. In a plain
  * browser (development only, no desktop bridge) the gate stands aside.
  */
+import { CruxJoinHelp } from "@/components/crux-join";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { BrailleSpinner } from "@/components/braille-spinner";
 import type { CruxBridge, CruxStatus } from "@/components/crux-hub";
@@ -23,7 +24,6 @@ export interface CruxAccount { name: string; tier: CruxTier; offline: boolean; a
 const TIERS: readonly CruxTier[] = ["trial", "basic", "premium", "vvip", "owner"];
 // Plans are named after the Southern Cross, brightest star for the highest plan (owner, 2026-11-12).
 export const TIER_NAME: Record<CruxTier, string> = { trial: "Imai", basic: "Gacrux", premium: "Mimosa", vvip: "Acrux", owner: "Owner" };
-const HUB_URL = "https://www.engineeringhub.site/";
 const RECHECK_MS = 10 * 60 * 1000;
 
 /** What the gate shows for a status from the main process. Pure, for tests. */
@@ -56,11 +56,9 @@ function Gate({ problem, busy, onSignIn }: { problem: string; busy: boolean; onS
 						Sign in with Discord
 					</Button>
 					{problem && <p role="alert" className="mt-4 text-sm text-destructive" data-testid="crux-gate-problem">{problem}</p>}
-					<p className="mt-6 text-sm text-muted-foreground">
-						Not a member yet?{" "}
-						<a href={HUB_URL} target="_blank" rel="noopener noreferrer" className="text-primary underline-offset-2 hover:underline">Join the Study Hub</a>
-						{" "}and pick a plan, then sign in here.
-					</p>
+					<div className="mt-6 w-full">
+						<CruxJoinHelp open={Boolean(problem)} />
+					</div>
 				</div>
 			</div>
 		</main>

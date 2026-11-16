@@ -627,3 +627,18 @@ test("single-line IME sanitizes after completion, and queued external assignment
 	assert.equal(readPathInput(f.root), "externalvalue");
 	assert.deepEqual(f.writes, ["a中文"]);
 });
+
+test("Crux's Ask the tutor puts a passage after what is already written, and it undoes in one step", async () => {
+	const { INSERT_TEXT_EVENT } = await import("../components/path-input.tsx");
+	const f = await fixture("");
+	await f.event(INSERT_TEXT_EVENT, { detail: "About this passage from TUT 2, page 3:\n> d = 58.8 mm\n\n" });
+	assert.equal(f.value, "About this passage from TUT 2, page 3:\n> d = 58.8 mm\n\n");
+	const g = await fixture("why?");
+	g.select(0);
+	await g.event(INSERT_TEXT_EVENT, { detail: "> quoted" });
+	assert.equal(g.value, "why?\n\n> quoted", "goes at the end, after a blank line, wherever the caret was");
+	await g.event("keydown", { key: "z", metaKey: true });
+	assert.equal(g.value, "why?");
+	await g.event(INSERT_TEXT_EVENT, { detail: 42 });
+	assert.equal(g.value, "why?", "anything but text is ignored");
+});

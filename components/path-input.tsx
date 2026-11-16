@@ -12,6 +12,9 @@ import {
 } from "./path-input-dom";
 
 export const INSERT_FILE_PATHS_EVENT = "lh:insert-file-paths";
+/** Text put at the end of what the learner is writing (Crux's viewer: "Ask the tutor" about a passage). */
+export const INSERT_TEXT_EVENT = "lh:insert-text";
+const NEWLINE = String.fromCharCode(10);
 export type PathInputProps = Omit<React.HTMLAttributes<HTMLDivElement>, "children" | "dangerouslySetInnerHTML" | "defaultValue" | "onChange"> & {
 	value: string;
 	onValueChange: (value: string) => void;
@@ -102,6 +105,16 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 			change(next);
 			root.focus();
 			restorePathSelection(root, saved);
+		}
+		function insertText(event: Event) {
+			const text: unknown = (event as CustomEvent<unknown>).detail;
+			if (typeof text !== "string" || !text.trim() || composing.current) return;
+			remember();
+			// always at the end, whatever the caret: the learner's own words stay first
+			const end = { anchor: current.length, focus: current.length };
+			const gap = current && !current.endsWith(NEWLINE) ? NEWLINE + NEWLINE : "";
+			change(replacePathSelection(current, end, gap + text));
+			root.focus();
 		}
 		function insertEvent(event: Event) {
 			const paths: unknown = (event as CustomEvent<unknown>).detail;
@@ -242,6 +255,7 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 		paint(saved, false);
 		if (initial.current.autoFocus) { root.focus(); restorePathSelection(root, saved); }
 		root.addEventListener(INSERT_FILE_PATHS_EVENT, insertEvent);
+		root.addEventListener(INSERT_TEXT_EVENT, insertText);
 		root.addEventListener("beforeinput", beforeInput);
 		root.addEventListener("input", input);
 		root.addEventListener("keydown", keyDown);
@@ -256,6 +270,7 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 			composing.current = false;
 			controllerRef.current = null;
 			root.removeEventListener(INSERT_FILE_PATHS_EVENT, insertEvent);
+			root.removeEventListener(INSERT_TEXT_EVENT, insertText);
 			root.removeEventListener("beforeinput", beforeInput);
 			root.removeEventListener("input", input);
 			root.removeEventListener("keydown", keyDown);

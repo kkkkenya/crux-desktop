@@ -53,6 +53,7 @@ import type { UpdateState } from "@/components/settings/update-settings.tsx";
 import { FilePathDropZone } from "@/components/file-path-drop-zone";
 import type { CruxBridge } from "@/components/crux-hub";
 import { CruxRail } from "@/components/crux-rail";
+import { CruxReader } from "@/components/crux-reader";
 const SIDEBAR_AUTOCLOSE = 928;
 
 // Module scope, guarded for SSR (the server has no navigator).
@@ -924,7 +925,13 @@ function SessionsSidebar() {
 function RailHost() {
 	const { open, toggle } = useSidebar();
 	const { open: openSettings } = useSettingsDialog();
-	return <CruxRail sessionsOpen={open} onToggleSessions={toggle} onOpenSettings={() => openSettings()} />;
+	return (
+		<>
+			<CruxRail sessionsOpen={open} onToggleSessions={toggle} onOpenSettings={() => openSettings()} />
+			{/* Crux's file viewer, on every screen: tabs, the dock, and the mini reader in a session's notes panel. */}
+			<CruxReader />
+		</>
+	);
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {

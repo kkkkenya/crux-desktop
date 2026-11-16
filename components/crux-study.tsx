@@ -58,6 +58,14 @@ export function OpenAtButton({ unit, fileId, name, page, label }: { unit: string
 	if (!bridge || !/^\d+$/.test(fileId) || !name) return null;
 	const open = async () => {
 		setBusy(true); setProblem("");
+		if (bridge.bytes && /\.pdf$/i.test(name)) {
+			const saved = await bridge.download(unit, fileId, name).catch(() => null);
+			setBusy(false);
+			if (!saved) setProblem("The file could not be opened.");
+			else if (!saved.ok) setProblem(saved.error);
+			else window.dispatchEvent(new CustomEvent("crux:open-file", { detail: { path: saved.value.path, name, page } }));
+			return;
+		}
 		const reply = await bridge.openAt(unit, fileId, name, page).catch(() => null);
 		setBusy(false);
 		if (!reply) setProblem("The file could not be opened.");
@@ -86,7 +94,7 @@ function PinSelection({ onPin }: { onPin: (text: string) => void }) {
 			const text = sel?.toString().trim() ?? "";
 			const node = sel?.anchorNode ?? null;
 			const el = node ? (node.nodeType === 1 ? (node as Element) : node.parentElement) : null;
-			if (!sel || sel.rangeCount === 0 || text.length < 2 || !el || el.closest("[data-testid=crux-notes], input, textarea, [contenteditable=true], dialog")) { setAt(null); return; }
+			if (!sel || sel.rangeCount === 0 || text.length < 2 || !el || el.closest("[data-testid=crux-notes], [data-crux-reader-text], input, textarea, [contenteditable=true], dialog")) { setAt(null); return; }
 			const box = sel.getRangeAt(0).getBoundingClientRect();
 			setAt({ x: Math.min(box.right, window.innerWidth - 80), y: Math.max(box.top - 36, 8), text: text.slice(0, 2000) });
 		};
@@ -268,6 +276,17 @@ export function CruxNotesPanel({ chatId, title, onClose }: { chatId: string; tit
 		setStudy(reply.value);
 	}, [bridge]);
 	useEffect(() => { void load(); }, [load]);
+	// The mini reader (crux-reader.tsx) sits at the top of this panel: tell it the slot is here, and when it's gone.
+	useEffect(() => {
+		window.dispatchEvent(new Event("crux:notes-panel"));
+		return () => { window.setTimeout(() => window.dispatchEvent(new Event("crux:notes-panel")), 0); };
+	}, []);
+	// A note added from the viewer ("Add to notes") shows here at once.
+	useEffect(() => {
+		const added = (e: Event) => { const note = (e as CustomEvent<CruxNote>).detail; if (note?.id) setStudy((s) => (s && !s.notes.some((n) => n.id === note.id) ? { ...s, notes: [note, ...s.notes] } : s)); };
+		window.addEventListener("crux:note-added", added);
+		return () => window.removeEventListener("crux:note-added", added);
+	}, []);
 	useEffect(() => {
 		if (!study) return;
 		const saved = read(unitKey(chatId));
@@ -314,6 +333,7 @@ export function CruxNotesPanel({ chatId, title, onClose }: { chatId: string; tit
 				</button>
 			</header>
 			<div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+				<div id="crux-reading" />{/* the file you're reading, small (crux-reader.tsx Mini) */}
 				{!bridge && <p className="text-sm text-muted-foreground">Notes need the Crux desktop app.</p>}
 				{bridge && !study && !problem && <p className="text-sm text-muted-foreground"><BrailleSpinner label="Loading notes" /> Loading…</p>}
 				{problem && <p role="alert" className="text-sm text-destructive">{problem} <button type="button" className="cursor-pointer underline" onClick={() => void load()}>Try again</button></p>}
