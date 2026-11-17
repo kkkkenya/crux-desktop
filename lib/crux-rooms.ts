@@ -20,7 +20,8 @@ type Saved = { code: string | null; pub: PublicRoomId | null };
 const load = (): Saved => { try { const v = JSON.parse(localStorage.getItem(KEY) || "null") as Saved | null; return { code: v?.code ?? null, pub: v?.pub === "hub" || v?.pub === "long" ? v.pub : null }; } catch { return { code: null, pub: null }; } };
 
 export interface RoomsSnapshot { code: string | null; pub: PublicRoomId | null; data: RoomState | null; offset: number; notice: string | null; pubCount: number | null; open: boolean }
-let st: RoomsSnapshot = { code: null, pub: null, data: null, offset: 0, notice: null, pubCount: null, open: false };
+const EMPTY: RoomsSnapshot = { code: null, pub: null, data: null, offset: 0, notice: null, pubCount: null, open: false };
+let st: RoomsSnapshot = EMPTY;
 let loaded = false;
 const subs = new Set<() => void>();
 function set(patch: Partial<RoomsSnapshot>) {
@@ -28,16 +29,18 @@ function set(patch: Partial<RoomsSnapshot>) {
 	try { localStorage.setItem(KEY, JSON.stringify({ code: st.code, pub: st.pub })); } catch { /* storage blocked */ }
 	subs.forEach((f) => f());
 }
-function ensureLoaded() { if (!loaded && typeof window !== "undefined") { loaded = true; st = { ...st, ...load() }; } }
 export function useRooms(): RoomsSnapshot {
-	ensureLoaded();
-	return useSyncExternalStore((f) => { subs.add(f); return () => subs.delete(f); }, () => st, () => st);
+	// the saved room comes back after the first render, so the server's HTML and the window's first render agree
+	useEffect(() => { if (!loaded) { loaded = true; const saved = load(); if (saved.code || saved.pub) set(saved); } }, []);
+	return useSyncExternalStore((f) => { subs.add(f); return () => subs.delete(f); }, () => st, () => EMPTY);
 }
 export const serverNow = () => Date.now() + st.offset;
 /** The room panel: open (full) or folded to the mini bar. */
 export const setRoomPanel = (open: boolean) => set({ open });
 export const clearRoomNotice = () => set({ notice: null });
 
+// bumped by every join, host, leave and public room: a reply asked for before that is dropped
+let gen = 0;
 /** A reply from Crux; an older one than we hold (a poll that crossed a host action) is dropped. */
 function adopt(v: RoomState) {
 	if (st.data && st.data.room.code === v.room.code && v.room.version < st.data.room.version) return;
@@ -53,11 +56,11 @@ function tellFocus(until: string | null, room: PublicRoomId | null = null) {
 	void bridge()?.focus?.(until, room).then((r) => { if (r.ok && room) set({ pubCount: r.value.room }); }).catch(() => {});
 }
 
-class RoomError extends Error { constructor(message: string, readonly status?: number) { super(message); } }
-async function call<T>(p: Promise<{ ok: true; value: T } | { ok: false; error: string; status?: number }> | undefined): Promise<T> {
+class RoomError extends Error { constructor(message: string, readonly status?: number, readonly code?: string) { super(message); } }
+async function call<T>(p: Promise<{ ok: true; value: T } | { ok: false; error: string; status?: number; code?: string }> | undefined): Promise<T> {
 	if (!p) throw new RoomError("Update Crux Harness to use study rooms.");
 	const r = await p;
-	if (!r.ok) throw new RoomError(r.error, r.status);
+	if (!r.ok) throw new RoomError(r.error, r.status, r.code);
 	return r.value;
 }
 
@@ -77,19 +80,25 @@ function chime() {
 
 export async function hostRoom(room: { name?: string; unit?: string | null; plan?: Partial<RoomPlan> }) {
 	prime();
+	const g = ++gen;
 	const v = await call(bridge()?.roomHost?.(room));
-	adopt(v);
+	if (g === gen) adopt(v);
 }
 export async function joinRoomCode(code: string) {
 	prime();
+	const g = ++gen;
 	const v = await call(bridge()?.roomJoin?.(code));
-	adopt(v);
+	if (g === gen) adopt(v);
 }
 export async function refreshRoom() {
 	if (!st.code) return;
-	try { adopt(await call(bridge()?.roomState?.(st.code))); } catch (e) {
-		const s = (e as RoomError).status;
+	const g = gen, code = st.code;
+	try { const v = await call(bridge()?.roomState?.(code)); if (g === gen && st.code === code) adopt(v); } catch (e) {
+		if (g !== gen || st.code !== code) return;
+		const { status: s, code: why } = e as RoomError;
 		if (s === 410 || s === 403 || s === 400) gone((e as Error).message);
+		else if (why === "signed-out") gone("Sign in to Crux again to rejoin the room.");
+		else if (why === "no-access") gone((e as Error).message);
 		// no connection: keep the last state; the clock runs on its own
 	}
 }
@@ -108,12 +117,14 @@ export async function roomAct(action: string, extra: { plan?: Partial<RoomPlan>;
 	}
 }
 export async function leaveRoom() {
+	gen++;
 	if (st.code) await bridge()?.roomLeave?.().catch(() => null);
 	tellFocus(null);
 	set({ code: null, data: null, pub: null, notice: null, pubCount: null });
 }
 export async function joinPublic(id: PublicRoomId) {
 	prime();
+	gen++;
 	if (st.code) await bridge()?.roomLeave?.().catch(() => null);
 	set({ code: null, data: null, pub: id, notice: null, open: true });
 	const v = publicPhase(id, Date.now());
@@ -134,13 +145,14 @@ let stopEngine: (() => void) | null = null;
 function startEngine() {
 	if (stopEngine) return;
 	if (st.code && !st.data) void refreshRoom();
-	let last: string | null = null, polled = Date.now();
+	let last: string | null = null, lastRoom: string | null = null, polled = Date.now();
 	const beat = setInterval(() => {
 		const v = roomViewNow();
 		if (!v) return;
 		const key = `${st.code ?? st.pub}:${v.state}:${v.mode}:${v.round}:${st.pub ? Math.round((Date.now() + v.left) / 60e3) : ""}`;
-		if (last && key !== last) chime();
-		last = key;
+		const roomId = String(st.code ?? st.pub);
+		if (last && key !== last && roomId === lastRoom) chime(); // a new block in the same room, not a move to another room
+		last = key; lastRoom = roomId;
 		if (st.pub) tellFocus(v.mode === "focus" ? new Date(Math.round((Date.now() + v.left) / 60e3) * 60e3).toISOString() : null, st.pub);
 		else if (st.data) {
 			// the block's exact end in server time, so the same value is sent once, not every second

@@ -1,5 +1,6 @@
 /**
- * The clock of a hosted study room. A copy of Crux web's study/web/src/room-clock.js (keep them the same): the server
+ * The clock of a hosted study room: the reading half of Crux web's study/web/src/room-clock.js (settle, phaseAt;
+ * the host actions run on the server, so they are not needed here). When the web file's rules change, change these. The server
  * stores a schedule, every device works out the phase from it with the server's time, so a laptop that sleeps or has
  * the wrong time still shows the right block. Anchored to the current phase, so a skip or a settings change never
  * moves the boundaries after it.
@@ -68,7 +69,7 @@ export function phaseAt(c: RoomClock, now: number): RoomView {
 	return { state: s.state, mode: s.phase, left: Math.max(0, left), total, round: s.round, rounds: s.plan.rounds };
 }
 
-/** A public room on the clock: the Study room focuses :00–:25 and :30–:55, the Long room :00–:50. */
+/** A public room on the clock (Crux web: focus-store.js roomPhase): the Study room focuses :00–:25 and :30–:55, the Long room :00–:50. */
 export const PUBLIC_ROOMS = { hub: { name: "Study room", focus: 25, block: 30 }, long: { name: "Long room", focus: 50, block: 60 } } as const;
 export type PublicRoomId = keyof typeof PUBLIC_ROOMS;
 export function publicPhase(id: PublicRoomId, now: number): RoomView {

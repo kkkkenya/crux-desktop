@@ -43,12 +43,14 @@ html[data-motion="off"] .crux-ring-fill { transition: none; }
 @media (prefers-reduced-motion: reduce) { .crux-ring-fill { transition: none; } }
 
 /* the panel in the app shell, and its folded bar */
-.crux-room-panel { position: fixed; z-index: 45; right: 16px; bottom: 16px; width: min(360px, calc(100vw - 32px)); max-height: calc(100dvh - 96px); overflow-y: auto; padding: 14px; border-radius: 18px; animation: crux-room-in 0.28s var(--crux-spring, ease-out); }
+.crux-room-panel { position: fixed; z-index: 61; right: 16px; bottom: 16px; width: min(360px, calc(100vw - 32px)); max-height: calc(100dvh - 96px); overflow-y: auto; padding: 14px; border-radius: 18px; animation: crux-room-in 0.28s var(--crux-spring, ease-out); }
 @keyframes crux-room-in { from { opacity: 0; transform: translateY(10px) scale(0.98); } }
 html[data-motion="off"] .crux-room-panel, html[data-motion="off"] .crux-room-mini { animation: none; }
 .crux-room-head { display: flex; align-items: flex-start; gap: 8px; font-size: 14px; }
 .crux-room-settings { padding-top: 10px; border-top: 1px solid var(--border); }
-.crux-room-mini { position: fixed; z-index: 45; right: 16px; bottom: 16px; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 16px; border: 0; border-radius: 999px; color: var(--foreground); font: inherit; font-size: 14px; cursor: pointer; animation: crux-room-in 0.28s var(--crux-spring, ease-out); }
+.crux-room-mini { position: fixed; z-index: 61; right: 16px; bottom: 16px; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 16px; border: 0; border-radius: 999px; color: var(--foreground); font: inherit; font-size: 14px; cursor: pointer; animation: crux-room-in 0.28s var(--crux-spring, ease-out); }
 .crux-room-dot { width: 9px; height: 9px; border-radius: 50%; background: #3ba99c; }
 .crux-room-dot.short, .crux-room-dot.long { background: var(--primary); }
+/* above Crux's viewer (z 60), so the clock stays in sight while reading; on a narrow window, above the bottom bar */
 body:has(.crux-pdfview) .crux-room-panel, body:has(.crux-pdfview) .crux-room-mini { bottom: 64px; }
+@media (max-width: 720px) { .crux-room-panel, .crux-room-mini { bottom: calc(72px + env(safe-area-inset-bottom, 0px)); } }
