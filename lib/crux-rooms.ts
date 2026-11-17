@@ -10,7 +10,8 @@ import { length, phaseAt, publicPhase, settle, type PublicRoomId, type RoomClock
 
 export interface RoomPerson { key: string; name: string; host: boolean; here: boolean; me: boolean }
 export interface RoomWork { text: string; fileId: string | null; fileName: string | null; page: number | null }
-export interface RoomState { now: number; room: { code: string; name: string; unit: string | null; clock: RoomClock; version: number; locked: boolean; host: boolean; work?: RoomWork | null }; people: RoomPerson[]; checkin?: { round: number; mine: string | null; counts: { done: number; partly: number; stuck: number } | null } }
+export interface RoomBoard { on?: boolean; title: string; text: string; steps: string[]; step: number; code: string; output: string }
+export interface RoomState { now: number; room: { code: string; name: string; unit: string | null; clock: RoomClock; version: number; locked: boolean; host: boolean; work?: RoomWork | null; board?: RoomBoard | null }; people: RoomPerson[]; checkin?: { round: number; mine: string | null; counts: { done: number; partly: number; stuck: number } | null } }
 export interface RoomsList { now: number; public: { id: PublicRoomId; name: string; focus: number; block: number; count: number | null }[]; mine: { code: string; name: string } | null }
 
 const KEY = "crux:room";
@@ -103,7 +104,7 @@ export async function refreshRoom() {
 		// no connection: keep the last state; the clock runs on its own
 	}
 }
-export async function roomAct(action: string, extra: { plan?: Partial<RoomPlan>; name?: string; person?: string; work?: RoomWork | null } = {}) {
+export async function roomAct(action: string, extra: { plan?: Partial<RoomPlan>; name?: string; person?: string; work?: RoomWork | null; board?: Partial<RoomBoard> } = {}) {
 	prime();
 	if (!st.code) return;
 	try {
@@ -166,7 +167,8 @@ function startEngine() {
 			const c = settle(st.data.room.clock, serverNow());
 			tellFocus(v.state === "running" && v.mode === "focus" && c.phaseStart != null ? new Date(c.phaseStart + length(c.plan, c.phase)).toISOString() : null);
 		}
-		if (st.code && Date.now() - polled >= POLL && document.visibilityState === "visible") { polled = Date.now(); void refreshRoom(); }
+		const every = st.data?.room.board ? 5e3 : POLL; // the board: members follow the steps closely
+		if (st.code && Date.now() - polled >= every && document.visibilityState === "visible") { polled = Date.now(); void refreshRoom(); }
 	}, 1000);
 	const back = () => { if (document.visibilityState === "visible" && st.code) { polled = Date.now(); void refreshRoom(); } };
 	document.addEventListener("visibilitychange", back);

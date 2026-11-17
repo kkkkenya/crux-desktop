@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 import { LIMITS, PRESETS, PUBLIC_ROOMS, type PublicRoomId, type RoomPlan, type RoomView } from "@/lib/crux-room-clock";
 import {
 	clearRoomNotice, clockText, hostRoom, joinPublic, joinRoomCode, leaveRoom, roomAct, roomCheckin, roomViewNow, roomsList, setRoomPanel, useRoomTick, useRooms,
-	type RoomState, type RoomsList,
+	type RoomBoard, type RoomState, type RoomsList,
 } from "@/lib/crux-rooms";
 
 const MODES = { focus: "Focus", short: "Short break", long: "Long break" } as const;
@@ -149,6 +149,44 @@ export function RoomsDialog({ unit, onClose }: { unit?: string | null; onClose: 
 // a Hub file's name for a button: no extension or underscores, at most 50 characters
 const shortFile = (n: string | null) => { const t = String(n || "paper").replace(/\.[a-z0-9]{2,4}$/i, "").replace(/_/g, " ").replace(/\s+/g, " ").trim(); return t.length > 50 ? `${t.slice(0, 47)}…` : t; };
 
+/** The board (the same as Crux web): the host's question and working, one step at a time; everyone follows. */
+function Board({ board, me, run }: { board: RoomBoard; me: boolean; run: (f: () => Promise<void>) => () => Promise<void> }) {
+	const [hidden, setHidden] = useState(false);
+	const [busy, setBusy] = useState(false);
+	const go = (step: number) => { if (busy) return; setBusy(true); void run(async () => { await roomAct("board", { board: { ...board, step } }); })().finally(() => setBusy(false)); };
+	if (hidden && !me) return <div className="crux-room-row crux-room-settings"><span className="crux-room-main"><b>The host is presenting</b></span><Button size="sm" variant="outline" className="cursor-pointer" onClick={() => setHidden(false)}>Back to the board</Button></div>;
+	return (
+		<section className="crux-room-settings crux-board" aria-label="The board" aria-live="polite">
+			<div className="crux-room-row"><h3 className="crux-room-h flex-1">{board.title || "The board"}</h3>{!me && <Button size="xs" variant="ghost" className="cursor-pointer" onClick={() => setHidden(true)}>Stop following</Button>}</div>
+			{board.text && <p className="crux-board-text">{board.text}</p>}
+			{board.steps.length > 0 && <ol className="crux-board-steps">{board.steps.slice(0, board.step).map((x, i) => <li key={i}>{x}</li>)}</ol>}
+			{board.steps.length > 0 && <p className="crux-room-sub">Step {board.step} of {board.steps.length}</p>}
+			{board.code && <pre className="crux-board-code"><code>{board.code}</code></pre>}
+			{board.output && <pre className="crux-board-code"><code>{board.output}</code></pre>}
+			{me && <div className="crux-room-actions"><Button size="sm" variant="outline" className="cursor-pointer" disabled={busy || board.step <= 0} onClick={() => go(board.step - 1)}>Back</Button><Button size="sm" className="cursor-pointer" disabled={busy || board.step >= board.steps.length} onClick={() => go(board.step + 1)}>Next step</Button></div>}
+		</section>
+	);
+}
+
+function BoardEditor({ board, onDone, run }: { board: RoomBoard | null | undefined; onDone: () => void; run: (f: () => Promise<void>) => () => Promise<void> }) {
+	const [title, setTitle] = useState(board?.title || "");
+	const [text, setText] = useState(board?.text || "");
+	const [steps, setSteps] = useState((board?.steps || []).join("\n"));
+	const [code, setCode] = useState(board?.code || "");
+	const [output, setOutput] = useState(board?.output || "");
+	const lines = steps.split("\n").filter((x) => x.trim());
+	return (
+		<form className="crux-room-form crux-room-settings" aria-label="Present" onSubmit={(e) => { e.preventDefault(); void run(async () => { await roomAct("board", { board: { title, text, steps: lines, step: board ? Math.min(board.step, lines.length) : 0, code, output } }); onDone(); })(); }}>
+			<label className="crux-room-field">Title<input className="crux-room-input" value={title} maxLength={120} onChange={(e) => setTitle(e.target.value)} placeholder="CAT 1 2024, question 3" /></label>
+			<label className="crux-room-field">Question<textarea className="crux-room-input" rows={3} value={text} maxLength={4000} onChange={(e) => setText(e.target.value)} /></label>
+			<label className="crux-room-field">Working <span className="crux-room-sub">(one step per line)</span><textarea className="crux-room-input" rows={5} value={steps} onChange={(e) => setSteps(e.target.value)} /></label>
+			<label className="crux-room-field">Code <span className="crux-room-sub">(optional)</span><textarea className="crux-room-input font-mono" rows={3} value={code} maxLength={6000} onChange={(e) => setCode(e.target.value)} /></label>
+			<label className="crux-room-field">Its output <span className="crux-room-sub">(optional)</span><textarea className="crux-room-input font-mono" rows={2} value={output} maxLength={4000} onChange={(e) => setOutput(e.target.value)} /></label>
+			<div className="crux-room-actions"><Button type="submit" size="sm" className="cursor-pointer">{board ? "Update the board" : "Show to the room"}</Button><Button type="button" size="sm" variant="ghost" className="cursor-pointer" onClick={onDone}>Cancel</Button></div>
+		</form>
+	);
+}
+
 /** Today's work (the same as Crux web): what the host has the room do, with a Hub paper to open at a page. */
 function TodaysWork({ data, me, run }: { data: RoomState; me: boolean; run: (f: () => Promise<void>) => () => Promise<void> }) {
 	const [editing, setEditing] = useState(false);
@@ -240,6 +278,7 @@ export function RoomPanel() {
 	const [error, setError] = useState<string | null>(null);
 	const [copied, setCopied] = useState(false);
 	const [ending, setEnding] = useState(false);
+	const [presenting, setPresenting] = useState(false);
 	const v = roomViewNow(s);
 	if (!s.code && !s.pub) {
 		if (!s.notice || !s.open) return null;
@@ -300,6 +339,14 @@ export function RoomPanel() {
 						<Button variant="ghost" size="sm" className="cursor-pointer" onClick={() => void leaveRoom()}>Leave</Button>
 					</div>
 					{error && <p className="crux-room-error" role="alert">{error}</p>}
+					{me && presenting && <BoardEditor board={room?.board} run={run} onDone={() => setPresenting(false)} />}
+					{!presenting && room?.board && <Board board={room.board} me={me} run={run} />}
+					{me && !presenting && room && (
+						<div className="crux-room-actions">
+							<Button size="sm" variant="outline" className="cursor-pointer" onClick={() => setPresenting(true)}>{room.board ? "Edit the board" : "Present"}</Button>
+							{room.board && <Button size="sm" variant="ghost" className="cursor-pointer" onClick={run(() => roomAct("board", { board: { on: false } }))}>Stop presenting</Button>}
+						</div>
+					)}
 					{s.data && <TodaysWork data={s.data} me={me} run={run} />}
 					{s.data && <CheckIn v={v} data={s.data} me={me} run={run} />}
 					{me && settings && plan && room && (

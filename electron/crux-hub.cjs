@@ -47,7 +47,7 @@ const UNIT = /^[A-Z]{2,5} ?\d{3}[A-Z]?$/;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 // a room code: four letters, no vowels (study/server/defs.js ROOMS.codeLetters); a person's handle in a room
 const ROOM_CODE = /^[BCDFGHJKLMNPQRSTVWXZ]{4}$/;
-const ROOM_ACTIONS = new Set(["start", "pause", "resume", "skip", "settings", "end", "lock", "unlock", "remove", "host", "rename", "work"]);
+const ROOM_ACTIONS = new Set(["start", "pause", "resume", "skip", "settings", "end", "lock", "unlock", "remove", "host", "rename", "work", "board"]);
 const PUBLIC_ROOM_IDS = new Set(["hub", "long"]);
 const text = (v, max) => String(v ?? "").trim().slice(0, max);
 
@@ -591,6 +591,12 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 		if (Number.isInteger(x.version)) body.version = x.version;
 		if (x.plan != null) body.plan = roomPlan(x.plan);
 		if (x.name != null) body.name = text(x.name, 40);
+		// the board (F8): text the host presents; Crux web cleans it again (server/rooms.js cleanBoard)
+		if (x.board !== undefined) {
+			const b = x.board && typeof x.board === "object" ? x.board : null;
+			const str = (v, max) => String(v ?? "").slice(0, max);
+			body.board = !b || b.on === false ? { on: false } : { title: str(b.title, 120), text: str(b.text, 4000), steps: (Array.isArray(b.steps) ? b.steps : []).slice(0, 30).map((s) => str(s, 600)), step: Number.isInteger(b.step) ? b.step : 0, code: str(b.code, 6000), output: str(b.output, 4000) };
+		}
 		if (x.work !== undefined) {
 			const w = x.work && typeof x.work === "object" ? x.work : null;
 			body.work = w ? { text: text(w.text, 140), fileId: /^\d{1,12}$/.test(String(w.fileId ?? "")) ? String(w.fileId) : null, fileName: text(w.fileName, 120) || null, page: Number.isInteger(w.page) ? w.page : null } : null;
