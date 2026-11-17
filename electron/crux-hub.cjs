@@ -47,7 +47,7 @@ const UNIT = /^[A-Z]{2,5} ?\d{3}[A-Z]?$/;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 // a room code: four letters, no vowels (study/server/defs.js ROOMS.codeLetters); a person's handle in a room
 const ROOM_CODE = /^[BCDFGHJKLMNPQRSTVWXZ]{4}$/;
-const ROOM_ACTIONS = new Set(["start", "pause", "resume", "skip", "settings", "end", "lock", "unlock", "remove", "host", "rename", "work", "board"]);
+const ROOM_ACTIONS = new Set(["start", "pause", "resume", "skip", "settings", "end", "lock", "unlock", "remove", "host", "rename", "work", "board", "voice"]);
 const PUBLIC_ROOM_IDS = new Set(["hub", "long"]);
 const text = (v, max) => String(v ?? "").trim().slice(0, max);
 
@@ -592,6 +592,7 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 		if (x.plan != null) body.plan = roomPlan(x.plan);
 		if (x.name != null) body.name = text(x.name, 40);
 		// the board (F8): text the host presents; Crux web cleans it again (server/rooms.js cleanBoard)
+		if (typeof x.on === "boolean") body.on = x.on; // voice: add or remove the room's Discord voice channel
 		if (x.board !== undefined) {
 			const b = x.board && typeof x.board === "object" ? x.board : null;
 			const str = (v, max) => String(v ?? "").slice(0, max);
