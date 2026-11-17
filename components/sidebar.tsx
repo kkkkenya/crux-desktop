@@ -54,6 +54,7 @@ import { FilePathDropZone } from "@/components/file-path-drop-zone";
 import type { CruxBridge } from "@/components/crux-hub";
 import { CruxRail } from "@/components/crux-rail";
 import { CruxReader } from "@/components/crux-reader";
+import { RoomPanel } from "@/components/crux-rooms";
 const SIDEBAR_AUTOCLOSE = 928;
 
 // Module scope, guarded for SSR (the server has no navigator).
@@ -930,6 +931,7 @@ function RailHost() {
 			<CruxRail sessionsOpen={open} onToggleSessions={toggle} onOpenSettings={() => openSettings()} />
 			{/* Crux's file viewer, on every screen: tabs, the dock, and the mini reader in a session's notes panel. */}
 			<CruxReader />
+			<RoomPanel />
 		</>
 	);
 }

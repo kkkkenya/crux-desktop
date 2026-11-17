@@ -101,6 +101,14 @@ contextBridge.exposeInMainWorld("lh", {
 		bytes: (path) => ipcRenderer.invoke("lh:crux:control", { op: "bytes", path }),
 		schemes: (unit) => ipcRenderer.invoke("lh:crux:control", { op: "schemes", unit }),
 		askScheme: (unit, paperId) => ipcRenderer.invoke("lh:crux:control", { op: "askScheme", unit, paperId }),
+		// Study rooms (components/crux-rooms.tsx)
+		rooms: () => ipcRenderer.invoke("lh:crux:control", { op: "rooms" }),
+		roomHost: (room) => ipcRenderer.invoke("lh:crux:control", { op: "roomHost", room }),
+		roomJoin: (code) => ipcRenderer.invoke("lh:crux:control", { op: "roomJoin", code }),
+		roomState: (code) => ipcRenderer.invoke("lh:crux:control", { op: "roomState", code }),
+		roomAct: (code, action, extra) => ipcRenderer.invoke("lh:crux:control", { op: "roomAct", code, action, extra }),
+		roomLeave: () => ipcRenderer.invoke("lh:crux:control", { op: "roomLeave" }),
+		focus: (until, room) => ipcRenderer.invoke("lh:crux:control", { op: "focus", until, room }),
 		// A file the tutor saved (solution_page), to open as a tab in Crux's viewer.
 		onOpen: (cb) => {
 			const listener = (_event, file) => cb(file);

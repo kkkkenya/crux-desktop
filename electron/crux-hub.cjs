@@ -35,6 +35,8 @@ const OPS = new Set([
 	"local", "openLocal", "bytes",
 	// Marking schemes: a unit's schemes beside their papers, and asking for a missing one (2026-11-17).
 	"schemes", "askScheme",
+	// Study rooms (2026-11-18): the same rooms as Crux web's Focus page (study/server/rooms-routes.js).
+	"rooms", "roomHost", "roomJoin", "roomState", "roomAct", "roomLeave", "focus",
 	// Sharing a file with the class, and the contributor board.
 	"uploads", "contributors", "share",
 	// The new-version notice.
@@ -43,6 +45,10 @@ const OPS = new Set([
 const ID = /^[\w-]{1,40}$/;
 const UNIT = /^[A-Z]{2,5} ?\d{3}[A-Z]?$/;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
+// a room code: four letters, no vowels (study/server/defs.js ROOMS.codeLetters); a person's handle in a room
+const ROOM_CODE = /^[BCDFGHJKLMNPQRSTVWXZ]{4}$/;
+const ROOM_ACTIONS = new Set(["start", "pause", "resume", "skip", "settings", "end", "lock", "unlock", "remove", "host", "rename"]);
+const PUBLIC_ROOM_IDS = new Set(["hub", "long"]);
 const text = (v, max) => String(v ?? "").trim().slice(0, max);
 
 class CruxError extends Error {
@@ -113,7 +119,7 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 		if (!response.ok || body === null) {
 			// Crux's own words for a refusal it explains (a 4xx with { error }), else a plain retry message.
 			const said = response.status >= 400 && response.status < 500 && typeof body?.error === "string" ? body.error.slice(0, 300) : "";
-			throw new CruxError("failed", said || `Crux answered ${response.status}. Try again in a moment.`);
+			throw new CruxError("failed", said || `Crux answered ${response.status}. Try again in a moment.`, { status: response.status });
 		}
 		return body;
 	}
@@ -552,6 +558,48 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 		};
 	}
 
+	/*
+	 * Study rooms: the API is Crux web's; this side only checks what goes out. Plans are numbers, codes four letters,
+	 * names one short line. The replies go to the window as they are (names and the clock, never Discord ids).
+	 */
+	const roomCode = (code) => {
+		const c = String(code ?? "").toUpperCase().replace(/[\s-]/g, "");
+		if (!ROOM_CODE.test(c)) throw new CruxError("bad-request", "A room code is four letters.");
+		return c;
+	};
+	const roomPlan = (p) => {
+		if (p == null) return undefined;
+		if (typeof p !== "object") throw new CruxError("bad-request", "Those room settings are not valid.");
+		const out = {};
+		for (const k of ["focus", "short", "long", "longEvery", "rounds"]) if (k in p) out[k] = Math.round(Number(p[k])) || 0;
+		if ("wait" in p) out.wait = p.wait === true;
+		return out;
+	};
+	async function rooms() { return api("/api/rooms"); }
+	async function roomHost(room) {
+		const r = room && typeof room === "object" ? room : {};
+		return api("/api/rooms", "POST", { name: text(r.name, 40), unit: UNIT.test(String(r.unit ?? "")) ? r.unit : null, plan: roomPlan(r.plan) });
+	}
+	async function roomJoin(code) { return api("/api/rooms/join", "POST", { code: roomCode(code) }); }
+	async function roomState(code) { return api(`/api/rooms/state?code=${roomCode(code)}`); }
+	async function roomAct(code, action, extra) {
+		if (!ROOM_ACTIONS.has(String(action))) throw new CruxError("bad-request", "Unknown room action.");
+		const x = extra && typeof extra === "object" ? extra : {};
+		const body = { code: roomCode(code), action };
+		if (Number.isInteger(x.version)) body.version = x.version;
+		if (x.plan != null) body.plan = roomPlan(x.plan);
+		if (x.name != null) body.name = text(x.name, 40);
+		if (x.person != null) { if (!/^[\w-]{1,20}$/.test(String(x.person))) throw new CruxError("bad-request", "That person is not in the room."); body.person = String(x.person); }
+		return api("/api/rooms/act", "POST", body);
+	}
+	async function roomLeave() { return api("/api/rooms/leave", "POST", {}); }
+	/** "I'm focusing until …" for the count of people studying; a public room's id, or none. */
+	async function focus(until, room) {
+		const end = until == null ? null : new Date(String(until));
+		if (end && Number.isNaN(end.getTime())) throw new CruxError("bad-request", "until must be a date.");
+		return api("/api/focus", "POST", { until: end ? end.toISOString() : null, unit: PUBLIC_ROOM_IDS.has(String(room)) ? room : null });
+	}
+
 	async function askScheme(unit, paperId) {
 		if (!UNIT.test(String(unit)) || !/^\d{1,12}$/.test(String(paperId ?? ""))) throw new CruxError("bad-request", "Pick a paper first.");
 		const r = await api("/api/schemes/ask", "POST", { unit, paperId: String(paperId) });
@@ -689,7 +737,7 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 		return true;
 	}
 
-	return { status, login, logout, units, files, download, reveal, hubRoot, study, catalog, saveSetup, skipSetup, addNote, removeNote, learn, makeGuide, openAt, local, openLocal, bytes, schemes, askScheme, saveSolution, uploads, contributors, share, updateCheck, openUpdate, applyUpdate, aiToken };
+	return { status, login, logout, units, files, download, reveal, hubRoot, study, catalog, saveSetup, skipSetup, addNote, removeNote, learn, makeGuide, openAt, local, openLocal, bytes, schemes, askScheme, rooms, roomHost, roomJoin, roomState, roomAct, roomLeave, focus, saveSolution, uploads, contributors, share, updateCheck, openUpdate, applyUpdate, aiToken };
 }
 
 /** Renderer commands. The caller has already checked the sender is the trusted app window. */
@@ -718,6 +766,13 @@ async function cruxControl(command, hub, parentWindow) {
 			case "bytes": return { ok: true, value: hub.bytes(command.path) };
 			case "schemes": return { ok: true, value: await hub.schemes(command.unit) };
 			case "askScheme": return { ok: true, value: await hub.askScheme(command.unit, command.paperId) };
+			case "rooms": return { ok: true, value: await hub.rooms() };
+			case "roomHost": return { ok: true, value: await hub.roomHost(command.room) };
+			case "roomJoin": return { ok: true, value: await hub.roomJoin(command.code) };
+			case "roomState": return { ok: true, value: await hub.roomState(command.code) };
+			case "roomAct": return { ok: true, value: await hub.roomAct(command.code, command.action, command.extra) };
+			case "roomLeave": return { ok: true, value: await hub.roomLeave() };
+			case "focus": return { ok: true, value: await hub.focus(command.until, command.room) };
 			case "uploads": return { ok: true, value: await hub.uploads(command.unit) };
 			case "contributors": return { ok: true, value: await hub.contributors() };
 			case "share": return { ok: true, value: await hub.share(command.request) };

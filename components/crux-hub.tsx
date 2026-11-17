@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { ShareWithClass, TopContributors } from "@/components/crux-study";
 import { CruxJoinHelp } from "@/components/crux-join";
 
-export type CruxReply<T> = { ok: true; value: T } | { ok: false; code: string; error: string; resetsAt?: string | null };
+export type CruxReply<T> = { ok: true; value: T } | { ok: false; code: string; error: string; resetsAt?: string | null; status?: number };
 export interface CruxStatus { signedIn: boolean; name?: string; tier?: string; avatar?: string; problem?: string; offline?: boolean }
 export interface CruxUnit { code: string; title: string }
 export interface CruxFile { id: string; name: string; paper: boolean; pages: number | null; path: string | null }
@@ -54,6 +54,14 @@ export interface CruxBridge {
 	// Marking schemes (components/crux-schemes.tsx)
 	schemes?: (unit: string) => Promise<CruxReply<CruxSchemes>>;
 	askScheme?: (unit: string, paperId: string) => Promise<CruxReply<{ asked: boolean }>>;
+	// Study rooms (components/crux-rooms.tsx), the same rooms as Crux web
+	rooms?: () => Promise<CruxReply<import("@/lib/crux-rooms").RoomsList>>;
+	roomHost?: (room: { name?: string; unit?: string | null; plan?: Partial<import("@/lib/crux-room-clock").RoomPlan> }) => Promise<CruxReply<import("@/lib/crux-rooms").RoomState>>;
+	roomJoin?: (code: string) => Promise<CruxReply<import("@/lib/crux-rooms").RoomState>>;
+	roomState?: (code: string) => Promise<CruxReply<import("@/lib/crux-rooms").RoomState>>;
+	roomAct?: (code: string, action: string, extra?: { version?: number; plan?: Partial<import("@/lib/crux-room-clock").RoomPlan>; name?: string; person?: string }) => Promise<CruxReply<import("@/lib/crux-rooms").RoomState | { ended: true; now: number }>>;
+	roomLeave?: () => Promise<CruxReply<{ left: boolean }>>;
+	focus?: (until: string | null, room?: string | null) => Promise<CruxReply<{ others: number | null; room: number | null }>>;
 	uploads: (unit: string) => Promise<CruxReply<CruxUploads>>;
 	contributors: () => Promise<CruxReply<CruxContributors>>;
 	share: (request: { unit: string; name: string; bytes: Uint8Array; consent: boolean }) => Promise<CruxReply<CruxUploads>>;

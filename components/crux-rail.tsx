@@ -13,11 +13,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
 	DumbbellIcon, GraduationCapIcon, KeyboardIcon, LibraryIcon, LogOutIcon, NetworkIcon, PanelLeftIcon, PlusIcon, SearchIcon, SettingsIcon, SparklesIcon,
-	type LucideIcon, FileCheck2Icon,
+	type LucideIcon, FileCheck2Icon, UsersIcon,
 } from "lucide-react";
 import { TIER_NAME, useCruxAccount } from "@/components/crux-account";
 import { HubDialog } from "@/components/crux-hub";
 import { SchemesDialog } from "@/components/crux-schemes";
+import { RoomsDialog } from "@/components/crux-rooms";
 import { openCruxSetup } from "@/components/crux-study";
 import { LhMark, PLAN_STAR, PlanStars } from "@/components/lh-mark";
 import { cn } from "@/lib/utils";
@@ -45,6 +46,7 @@ export const PALETTE: readonly PaletteItem[] = [
 	{ id: "surprise", label: "Surprise me", hint: "Crux picks something worth doing now", words: "random anything" },
 	{ id: "hub", label: "Hub files", hint: "Notes and past papers for your units", words: "past papers notes download study hub" },
 	{ id: "schemes", label: "Marking schemes", hint: "The scheme for a paper, without a lesson", words: "marking scheme answers solutions memo cat exam" },
+	{ id: "rooms", label: "Study rooms", hint: "Study with others on one clock", words: "room host join code pomodoro focus timer together class" },
 	{ id: "sessions", label: "Show or hide sessions", hint: "Your earlier sessions", shortcut: "Ctrl+B", words: "history list sidebar" },
 	{ id: "find-session", label: "Search your sessions", hint: "Find an earlier session by name", shortcut: "Ctrl+Shift+F", words: "find history" },
 	{ id: "graph", label: "Knowledge graph", hint: "The map of what you know", shortcut: "Ctrl+G", words: "mind map graph home" },
@@ -169,6 +171,7 @@ export function CruxRail({ sessionsOpen, onToggleSessions, onOpenSettings }: { s
 	const [palette, setPalette] = useState(false);
 	const [hub, setHub] = useState(false);
 	const [schemes, setSchemes] = useState(false);
+	const [rooms, setRooms] = useState(false);
 	const [menu, setMenu] = useState(false);
 	const [surprising, setSurprising] = useState(false);
 
@@ -189,6 +192,7 @@ export function CruxRail({ sessionsOpen, onToggleSessions, onOpenSettings }: { s
 			case "surprise": void surprise(); break;
 			case "hub": setHub(true); break;
 			case "schemes": setSchemes(true); break;
+			case "rooms": setRooms(true); break;
 			case "sessions": onToggleSessions(); break;
 			case "find-session": if (!sessionsOpen) onToggleSessions(); setTimeout(() => runAction("sessions-search"), 250); break;
 			case "graph": router.push("/"); break;
@@ -222,6 +226,7 @@ export function CruxRail({ sessionsOpen, onToggleSessions, onOpenSettings }: { s
 			<RailButton icon={SearchIcon} label="Search Crux (Ctrl+P)" onClick={() => setPalette(true)} testid="rail-search" anim="lens" />
 			<RailButton icon={LibraryIcon} label="Hub files" onClick={() => setHub(true)} testid="rail-hub" anim="lid" />
 			<RailButton icon={FileCheck2Icon} label="Marking schemes" onClick={() => setSchemes(true)} testid="rail-schemes" anim="lift" />
+			<RailButton icon={UsersIcon} label="Study rooms" onClick={() => setRooms(true)} testid="rail-rooms" anim="lift" />
 			<RailButton icon={SparklesIcon} label={surprising ? "Picking something…" : "Surprise me"} onClick={() => void surprise()} testid="rail-surprise" anim="twinkle" />
 			<span className="flex-1" />
 			<RailButton icon={KeyboardIcon} label="Keyboard shortcuts (?)" onClick={() => runAction("cheat-sheet")} testid="rail-shortcuts" anim="tap" />
@@ -259,6 +264,7 @@ export function CruxRail({ sessionsOpen, onToggleSessions, onOpenSettings }: { s
 			{palette && <Palette onClose={() => setPalette(false)} onRun={run} />}
 			{hub && <HubDialog bridge={typeof window === "undefined" ? undefined : window.lh?.crux} onClose={() => setHub(false)} />}
 			{schemes && <SchemesDialog bridge={typeof window === "undefined" ? undefined : window.lh?.crux} onClose={() => setSchemes(false)} />}
+			{rooms && <RoomsDialog onClose={() => setRooms(false)} />}
 		</nav>
 	);
 }

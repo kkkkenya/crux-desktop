@@ -1,0 +1,54 @@
+/* Study rooms (components/crux-rooms.tsx), the same look as Crux web's Focus page (study/web/src/styles.css .ring, .room-*). */
+.crux-rooms { display: grid; gap: 14px; align-content: start; }
+.crux-room-card { display: grid; gap: 10px; padding: 14px; border-radius: 14px; border: 1px solid var(--crux-glass-bd, rgba(255, 255, 255, 0.07)); background: rgba(255, 255, 255, 0.03); }
+.crux-room-row { display: flex; align-items: center; gap: 12px; }
+.crux-room-main { flex: 1; min-width: 0; display: grid; gap: 2px; font-size: 14px; }
+.crux-room-sub { color: var(--muted-foreground); font-size: 12px; font-weight: 400; }
+.crux-room-h { font-size: 14px; font-weight: 650; margin: 0; display: flex; gap: 8px; align-items: baseline; }
+.crux-room-field { display: grid; gap: 6px; font-size: 13px; font-weight: 500; }
+.crux-room-input, .crux-room-num input, .crux-room-code { min-height: 40px; padding: 6px 10px; border-radius: 10px; border: 1px solid var(--border); background: rgba(0, 0, 0, 0.2); color: var(--foreground); font: inherit; font-size: 14px; }
+.crux-room-join { display: flex; gap: 8px; }
+.crux-room-code { flex: 1; min-width: 0; font-size: 20px; font-weight: 650; letter-spacing: 0.32em; text-transform: uppercase; font-variant-numeric: tabular-nums; }
+.crux-room-codetext { letter-spacing: 0.12em; }
+.crux-room-form { display: grid; gap: 12px; }
+.crux-room-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+.crux-room-num { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted-foreground); }
+.crux-room-num input { width: 72px; flex: none; }
+.crux-room-check { display: flex; align-items: center; gap: 8px; font-size: 13px; min-height: 36px; }
+.crux-room-check input { width: 18px; height: 18px; accent-color: var(--primary); }
+.crux-segmented { display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; padding: 3px; border-radius: 12px; background: rgba(255, 255, 255, 0.06); justify-self: start; }
+.crux-segmented button { min-height: 32px; padding: 0 14px; border: 0; border-radius: 9px; background: none; color: var(--muted-foreground); font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; }
+.crux-segmented button[aria-pressed="true"] { background: rgba(255, 255, 255, 0.12); color: var(--foreground); }
+.crux-room-notice { margin: 0; padding: 10px 12px; border-radius: 10px; background: rgba(242, 194, 0, 0.1); font-size: 13px; }
+.crux-room-error { margin: 0; color: var(--destructive); font-size: 13px; }
+.crux-room-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.crux-room-people { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.crux-room-people li { display: flex; align-items: center; gap: 10px; min-height: 36px; }
+.crux-room-people li.is-away { opacity: 0.6; }
+.crux-room-person { width: 28px; height: 28px; flex: none; border-radius: 50%; display: grid; place-items: center; color: var(--muted-foreground); background: color-mix(in srgb, var(--primary) 16%, transparent); }
+
+/* the ring */
+.crux-ring { position: relative; width: min(240px, 70vw); aspect-ratio: 1; justify-self: center; }
+.crux-ring.is-small { width: 190px; }
+.crux-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.crux-ring circle { fill: none; stroke-width: 10; }
+.crux-ring-track { stroke: rgba(255, 255, 255, 0.08); }
+.crux-ring-fill { stroke: #3ba99c; stroke-linecap: round; transition: stroke-dashoffset 1s linear; }
+.crux-ring-fill.short, .crux-ring-fill.long { stroke: var(--primary); }
+.crux-ring-text { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 4px; text-align: center; }
+.crux-ring-time { font-family: var(--font-fraunces), serif; font-size: 52px; font-weight: 600; line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.crux-ring.is-small .crux-ring-time { font-size: 42px; }
+.crux-ring-sub { color: var(--muted-foreground); font-size: 12px; max-width: 150px; }
+html[data-motion="off"] .crux-ring-fill { transition: none; }
+@media (prefers-reduced-motion: reduce) { .crux-ring-fill { transition: none; } }
+
+/* the panel in the app shell, and its folded bar */
+.crux-room-panel { position: fixed; z-index: 45; right: 16px; bottom: 16px; width: min(360px, calc(100vw - 32px)); max-height: calc(100dvh - 96px); overflow-y: auto; padding: 14px; border-radius: 18px; animation: crux-room-in 0.28s var(--crux-spring, ease-out); }
+@keyframes crux-room-in { from { opacity: 0; transform: translateY(10px) scale(0.98); } }
+html[data-motion="off"] .crux-room-panel, html[data-motion="off"] .crux-room-mini { animation: none; }
+.crux-room-head { display: flex; align-items: flex-start; gap: 8px; font-size: 14px; }
+.crux-room-settings { padding-top: 10px; border-top: 1px solid var(--border); }
+.crux-room-mini { position: fixed; z-index: 45; right: 16px; bottom: 16px; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 16px; border: 0; border-radius: 999px; color: var(--foreground); font: inherit; font-size: 14px; cursor: pointer; animation: crux-room-in 0.28s var(--crux-spring, ease-out); }
+.crux-room-dot { width: 9px; height: 9px; border-radius: 50%; background: #3ba99c; }
+.crux-room-dot.short, .crux-room-dot.long { background: var(--primary); }
+body:has(.crux-pdfview) .crux-room-panel, body:has(.crux-pdfview) .crux-room-mini { bottom: 64px; }
