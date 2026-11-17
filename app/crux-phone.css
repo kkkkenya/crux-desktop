@@ -1,0 +1,56 @@
+/* Crux on a phone (2026-11-17): the same app at a narrow width, for "Study from your phone" (electron/crux-remote.cjs)
+   and for a small window. The rail becomes a bar along the bottom, panels open full screen, the top bar keeps icons only. */
+@media (max-width: 720px) {
+	:root { --crux-bar: calc(64px + env(safe-area-inset-bottom, 0px)); }
+
+	/* The rail: a floating bar along the bottom with the six things a phone needs. */
+	.crux-rail {
+		position: fixed; z-index: 45; left: 8px; right: 8px; top: auto; bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+		width: auto; height: 52px; margin: 0; padding: 0 6px; flex-direction: row; align-items: center; justify-content: space-around; gap: 0; border-radius: 18px;
+	}
+	.crux-rail > a, .crux-rail > :not(button):not(div), .crux-rail > div:not(.relative),
+	.crux-rail [data-testid="rail-graph"], .crux-rail [data-testid="rail-search"], .crux-rail [data-testid="rail-surprise"],
+	.crux-rail [data-testid="rail-shortcuts"], .crux-rail [data-testid="rail-settings"] { display: none; }
+	.crux-rail .crux-rail-btn { width: 44px; height: 44px; }
+	.crux-rail [data-tip]::after { display: none; }
+	/* the account menu opens upward from the bar */
+	.crux-rail > div.relative > div { left: auto; right: 0; bottom: 48px; top: auto; }
+
+	/* Everything else gets the full width, above the bar. */
+	[data-testid="file-path-drop-zone"] > div.h-dvh,
+	[data-testid="file-path-drop-zone"] > main.h-dvh,
+	[data-testid="file-path-drop-zone"] .h-dvh { height: calc(100dvh - var(--crux-bar)); }
+
+	/* Sessions: a full-screen sheet over the lesson. */
+	aside.sidebar-motion:not(.w-0) { position: fixed; z-index: 44; inset: 0 0 var(--crux-bar) 0; width: 100% !important; margin: 0 !important; }
+	aside.sidebar-motion .crux-panel { width: 100%; }
+
+	/* Top bar: the title takes the room, chips keep their icons. */
+	header.lh-wco-gutter { height: 52px; gap: 6px; padding-left: 8px; padding-right: 8px; }
+	header.lh-wco-gutter > button.cursor-text { flex: 1 1 auto; min-width: 0; font-size: 20px; text-align: left; }
+	header.lh-wco-gutter > .flex-1 { display: none; }
+	[data-testid="plan-chip"], [data-testid="notes-chip"], [data-testid="files-chip"] { font-size: 0; gap: 0; padding: 8px; border-radius: 999px; }
+	[data-testid="plan-chip"] svg, [data-testid="notes-chip"] svg, [data-testid="files-chip"] svg { width: 18px; height: 18px; }
+	[data-testid="phase-chip"], header.lh-wco-gutter div:has(> [data-testid="coverage-ring"]) { display: none; }
+
+	/* The lesson column: phone margins. */
+	[data-testid="file-path-drop-zone"] .px-6 { padding-left: 14px; padding-right: 14px; }
+
+	/* The message box: the words get the full width, the buttons sit under them. */
+	form[data-testid="composer"] { flex-wrap: wrap; justify-content: flex-end; }
+	form[data-testid="composer"] > .lh-input, form[data-testid="composer"] > [data-file-path-default], form[data-testid="composer"] > div:first-child { flex: 1 0 100%; min-width: 0; }
+
+	/* Notes: full screen, above the bar. */
+	[data-testid="crux-notes"] { position: fixed; z-index: 46; inset: 0 0 var(--crux-bar) 0; width: 100% !important; height: auto !important; background: var(--card); }
+
+	/* The viewer fills the screen; its tools wrap. */
+	.crux-pdfview, body:has([data-testid="crux-notes"]) .crux-pdfview { right: 0; }
+	.crux-pdf-find { margin-left: 0; }
+	.crux-pdf-find input { width: 110px; }
+	.crux-pdf-dock { top: 58px; max-width: calc(100vw - 16px); }
+	.crux-html-page { height: calc(100dvh - 70px); border-radius: 0; }
+	.crux-addnote-bar { max-width: calc(100vw - 16px); }
+
+	/* Dialogs use the screen. */
+	dialog { max-width: 96vw; }
+}

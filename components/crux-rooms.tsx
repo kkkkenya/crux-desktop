@@ -12,8 +12,8 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { LIMITS, PRESETS, PUBLIC_ROOMS, type PublicRoomId, type RoomPlan, type RoomView } from "@/lib/crux-room-clock";
 import {
-	clearRoomNotice, clockText, hostRoom, joinPublic, joinRoomCode, leaveRoom, roomAct, roomViewNow, roomsList, setRoomPanel, useRoomTick, useRooms,
-	type RoomsList,
+	clearRoomNotice, clockText, hostRoom, joinPublic, joinRoomCode, leaveRoom, roomAct, roomCheckin, roomViewNow, roomsList, setRoomPanel, useRoomTick, useRooms,
+	type RoomState, type RoomsList,
 } from "@/lib/crux-rooms";
 
 const MODES = { focus: "Focus", short: "Short break", long: "Long break" } as const;
@@ -146,6 +146,83 @@ export function RoomsDialog({ unit, onClose }: { unit?: string | null; onClose: 
 	);
 }
 
+// a Hub file's name for a button: no extension or underscores, at most 50 characters
+const shortFile = (n: string | null) => { const t = String(n || "paper").replace(/\.[a-z0-9]{2,4}$/i, "").replace(/_/g, " ").replace(/\s+/g, " ").trim(); return t.length > 50 ? `${t.slice(0, 47)}…` : t; };
+
+/** Today's work (the same as Crux web): what the host has the room do, with a Hub paper to open at a page. */
+function TodaysWork({ data, me, run }: { data: RoomState; me: boolean; run: (f: () => Promise<void>) => () => Promise<void> }) {
+	const [editing, setEditing] = useState(false);
+	const [text, setText] = useState("");
+	const [fileId, setFileId] = useState("");
+	const [page, setPage] = useState("");
+	const [files, setFiles] = useState<{ id: string; name: string }[] | null>(null);
+	const room = data.room, w = room.work;
+	if (!w && !me) return null;
+	const bridge = typeof window === "undefined" ? undefined : window.lh?.crux;
+	const edit = () => {
+		setText(w?.text || ""); setFileId(w?.fileId || ""); setPage(w?.page ? String(w.page) : ""); setEditing(true);
+		if (room.unit && !files && bridge) void bridge.files(room.unit).then((r) => setFiles(r.ok ? r.value.files.filter((f) => /^\d+$/.test(f.id)).map((f) => ({ id: f.id, name: f.name })) : []), () => setFiles([]));
+	};
+	const save = (work: { text: string; fileId: string | null; fileName: string | null; page: number | null } | null) => void run(async () => { await roomAct("work", { work }); setEditing(false); })();
+	const open = async () => {
+		if (!bridge || !w?.fileId || !room.unit) return;
+		const r = await bridge.openAt(room.unit, w.fileId, w.fileName || "Paper", w.page).catch(() => null);
+		if (r?.ok) window.dispatchEvent(new CustomEvent("crux:open-file", { detail: { path: r.value.path, name: w.fileName, page: w.page } }));
+	};
+	if (editing) {
+		const file = files?.find((f) => f.id === fileId);
+		return (
+			<form className="crux-room-form crux-room-settings" aria-label="Today's work" onSubmit={(e) => { e.preventDefault(); save({ text, fileId: fileId || null, fileName: file?.name || w?.fileName || null, page: page ? Number(page) : null }); }}>
+				<label className="crux-room-field">Today's work<input className="crux-room-input" value={text} maxLength={140} onChange={(e) => setText(e.target.value)} placeholder="CAT 1 2024, questions 3 and 4" /></label>
+				{room.unit && (
+					<div className="crux-room-fields">
+						<label className="crux-room-field">Paper
+							<select className="crux-room-input" value={fileId} onChange={(e) => setFileId(e.target.value)} disabled={files === null}>
+								<option value="">{files === null ? "Loading…" : "None"}</option>
+								{w?.fileId && !(files || []).some((f) => f.id === w.fileId) && <option value={w.fileId}>{w.fileName}</option>}
+								{(files || []).map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+							</select>
+						</label>
+						<label className="crux-room-field">Page<input className="crux-room-input" type="number" inputMode="numeric" min={1} value={page} onChange={(e) => setPage(e.target.value)} disabled={!fileId} /></label>
+					</div>
+				)}
+				<div className="crux-room-actions">
+					<Button type="submit" size="sm" className="cursor-pointer" disabled={!text.trim() && !fileId}>Save</Button>
+					{w && <Button type="button" size="sm" variant="outline" className="cursor-pointer" onClick={() => save(null)}>Clear</Button>}
+					<Button type="button" size="sm" variant="ghost" className="cursor-pointer" onClick={() => setEditing(false)}>Cancel</Button>
+				</div>
+			</form>
+		);
+	}
+	return (
+		<section className="crux-room-row crux-room-settings" aria-label="Today's work">
+			<span className="crux-room-main">
+				<b>Today's work</b>
+				<span className="crux-room-sub">{w ? w.text || w.fileName : "Set what the room works on. Everyone opens it in their own Crux."}</span>
+				{w?.fileId && <button type="button" className="crux-room-link" onClick={() => void open()}>Open {shortFile(w.fileName)}{w.page ? ` · p. ${w.page}` : ""}</button>}
+			</span>
+			{me && <Button size="sm" variant="outline" className="cursor-pointer" onClick={edit}>{w ? "Change" : "Set"}</Button>}
+		</section>
+	);
+}
+
+/** At a break: how did that block go? Counts reach the host once 3 have answered, never who. */
+function CheckIn({ v, data, me, run }: { v: RoomView; data: RoomState; me: boolean; run: (f: () => Promise<void>) => () => Promise<void> }) {
+	const c = data.checkin;
+	const atBreak = v.mode !== "focus" || v.state === "waiting" || v.state === "done";
+	if (!c || !atBreak || v.state === "idle") return null;
+	const n = c.counts;
+	return (
+		<section className="crux-room-settings" aria-label="Check in">
+			<h3 className="crux-room-h">How did that block go?</h3>
+			<div className="crux-segmented mt-2" role="group" aria-label="How did that block go">
+				{(["done", "partly", "stuck"] as const).map((id) => <button key={id} type="button" aria-pressed={c.mine === id} onClick={run(() => roomCheckin(id))}>{id === "done" ? "Done" : id === "partly" ? "Partly" : "Stuck"}</button>)}
+			</div>
+			{me && <p className="crux-room-sub mt-2">{n ? `Round ${c.round}: ${n.done} done, ${n.partly} partly, ${n.stuck} stuck. Only counts are shown, never who.` : "The counts show once 3 people have answered."}</p>}
+		</section>
+	);
+}
+
 function statusLine(v: RoomView, hostName: string): React.ReactNode {
 	if (v.state === "idle") return `Waiting for ${hostName} to start`;
 	if (v.state === "paused") return `${MODES[v.mode]}, paused`;
@@ -223,6 +300,8 @@ export function RoomPanel() {
 						<Button variant="ghost" size="sm" className="cursor-pointer" onClick={() => void leaveRoom()}>Leave</Button>
 					</div>
 					{error && <p className="crux-room-error" role="alert">{error}</p>}
+					{s.data && <TodaysWork data={s.data} me={me} run={run} />}
+					{s.data && <CheckIn v={v} data={s.data} me={me} run={run} />}
 					{me && settings && plan && room && (
 						<form className="crux-room-form crux-room-settings" aria-label="Room settings" onSubmit={(e) => { e.preventDefault(); void run(async () => { await roomAct("settings", { plan, name }); setSettings(false); })(); }}>
 							<label className="crux-room-field">Name<input className="crux-room-input" value={name} maxLength={40} onChange={(e) => setName(e.target.value)} /></label>

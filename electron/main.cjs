@@ -24,7 +24,7 @@
  *     would shadow every settings-page key change until restart.
  */
 
-const { app, BrowserWindow, Menu, ipcMain, session, shell, dialog } = require("electron");
+const { app, BrowserWindow, Menu, ipcMain, session, shell, dialog, powerSaveBlocker } = require("electron");
 const { pickAttachmentPath } = require("./attachment-picker.cjs");
 const { createChatGPT, fileStore } = require("./chatgpt.cjs");
 const { attachChatGPTChild, trustedSender, chatGPTControl } = require("./chatgpt-ipc.cjs");
@@ -34,6 +34,7 @@ const { desktopAPIHeaders } = require("./desktop-api.cjs");
 const { openWebSubscriptionBrowser } = require("./web-subscription-browser.cjs");
 const { createCruxHub, cruxControl, attachCruxChild } = require("./crux-hub.cjs");
 const { activePatch, cleanOld, disablePatch } = require("./crux-patch.cjs");
+const { createPhones, createRemoteServer, hasCloudflared, downloadCloudflared, startTunnel, CLOUDFLARED_MB, PREFIX: REMOTE_PREFIX } = require("./crux-remote.cjs");
 const { randomBytes } = require("node:crypto");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
@@ -776,6 +777,50 @@ async function main() {
 		const win = BrowserWindow.fromWebContents(event.sender);
 		if (!trustedAppWindows.has(win) || !trustedSender(event, new URL(url).origin, BrowserWindow)) throw new Error("Untrusted desktop request.");
 		return cruxControl(command, cruxHub, win);
+	});
+
+	// Study from your phone: the proxy, the tunnel and the paired phones. Laptop window only.
+	const remoteDir = path.join(app.getPath("userData"), "remote");
+	const phones = createPhones(path.join(remoteDir, "phones.json"));
+	const remote = createRemoteServer({ upstream: () => url, secret: desktopAPISecret, control: (command) => cruxControl(command, cruxHubRef, null), phones, log });
+	let tunnel = null, blocker = null, remoteBusy = null;
+	const remoteState = (extra = {}) => ({ on: Boolean(tunnel), url: tunnel?.url ?? null, phones: phones.list(), codeOpen: phones.codeOpen(), helper: hasCloudflared(remoteDir), helperMB: CLOUDFLARED_MB, awake: blocker !== null, ...extra });
+	const pairLink = () => { const { code, expiresAt } = phones.newCode(); return { pairUrl: `${tunnel.url}${REMOTE_PREFIX}pair?code=${code}`, expiresAt }; };
+	const stopRemote = () => { tunnel?.stop(); tunnel = null; remote.stop(); if (blocker !== null) { powerSaveBlocker.stop(blocker); blocker = null; } };
+	app.on("before-quit", stopRemote);
+	ipcMain.handle("lh:remote:control", async (event, command) => {
+		const win = BrowserWindow.fromWebContents(event.sender);
+		if (!trustedAppWindows.has(win) || !trustedSender(event, new URL(url).origin, BrowserWindow)) throw new Error("Untrusted desktop request.");
+		try {
+			switch (command?.op) {
+				case "status": return { ok: true, value: remoteState() };
+				case "enable": {
+					if (tunnel) return { ok: true, value: remoteState(pairLink()) };
+					if (remoteBusy) return { ok: false, error: "Already starting. Wait a moment." };
+					remoteBusy = (async () => {
+						if (!hasCloudflared(remoteDir)) await downloadCloudflared(remoteDir, (p) => { if (!win.isDestroyed()) win.webContents.send("lh:remote:progress", { step: "download", p }); });
+						if (!win.isDestroyed()) win.webContents.send("lh:remote:progress", { step: "tunnel" });
+						const port = await remote.start();
+						tunnel = await startTunnel(remoteDir, port, log);
+						log(`remote: on at ${tunnel.url}`);
+					})();
+					try { await remoteBusy; } finally { remoteBusy = null; }
+					return { ok: true, value: remoteState(pairLink()) };
+				}
+				case "newCode": return tunnel ? { ok: true, value: remoteState(pairLink()) } : { ok: false, error: "Turn on Study from your phone first." };
+				case "disable": stopRemote(); return { ok: true, value: remoteState() };
+				case "removePhone": phones.remove(String(command.id || "")); return { ok: true, value: remoteState() };
+				case "setAwake":
+					if (command.on && blocker === null) blocker = powerSaveBlocker.start("prevent-app-suspension");
+					if (!command.on && blocker !== null) { powerSaveBlocker.stop(blocker); blocker = null; }
+					return { ok: true, value: remoteState() };
+				default: return { ok: false, error: "Unknown request." };
+			}
+		} catch (err) {
+			log(`remote: ${err?.message}`);
+			stopRemote();
+			return { ok: false, error: err?.message || "Study from your phone could not start." };
+		}
 	});
 
 	ipcMain.handle("lh:attachment:pick", (event, mode) => pickAttachmentPath(event, mode, {

@@ -36,7 +36,7 @@ const OPS = new Set([
 	// Marking schemes: a unit's schemes beside their papers, and asking for a missing one (2026-11-17).
 	"schemes", "askScheme",
 	// Study rooms (2026-11-18): the same rooms as Crux web's Focus page (study/server/rooms-routes.js).
-	"rooms", "roomHost", "roomJoin", "roomState", "roomAct", "roomLeave", "focus",
+	"rooms", "roomHost", "roomJoin", "roomState", "roomAct", "roomLeave", "roomCheckin", "focus",
 	// Sharing a file with the class, and the contributor board.
 	"uploads", "contributors", "share",
 	// The new-version notice.
@@ -47,7 +47,7 @@ const UNIT = /^[A-Z]{2,5} ?\d{3}[A-Z]?$/;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 // a room code: four letters, no vowels (study/server/defs.js ROOMS.codeLetters); a person's handle in a room
 const ROOM_CODE = /^[BCDFGHJKLMNPQRSTVWXZ]{4}$/;
-const ROOM_ACTIONS = new Set(["start", "pause", "resume", "skip", "settings", "end", "lock", "unlock", "remove", "host", "rename"]);
+const ROOM_ACTIONS = new Set(["start", "pause", "resume", "skip", "settings", "end", "lock", "unlock", "remove", "host", "rename", "work"]);
 const PUBLIC_ROOM_IDS = new Set(["hub", "long"]);
 const text = (v, max) => String(v ?? "").trim().slice(0, max);
 
@@ -589,10 +589,18 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 		if (Number.isInteger(x.version)) body.version = x.version;
 		if (x.plan != null) body.plan = roomPlan(x.plan);
 		if (x.name != null) body.name = text(x.name, 40);
+		if (x.work !== undefined) {
+			const w = x.work && typeof x.work === "object" ? x.work : null;
+			body.work = w ? { text: text(w.text, 140), fileId: /^\d{1,12}$/.test(String(w.fileId ?? "")) ? String(w.fileId) : null, fileName: text(w.fileName, 120) || null, page: Number.isInteger(w.page) ? w.page : null } : null;
+		}
 		if (x.person != null) { if (!/^[\w-]{1,20}$/.test(String(x.person))) throw new CruxError("bad-request", "That person is not in the room."); body.person = String(x.person); }
 		return api("/api/rooms/act", "POST", body);
 	}
 	async function roomLeave() { return api("/api/rooms/leave", "POST", {}); }
+	async function roomCheckin(code, how) {
+		if (!["done", "partly", "stuck"].includes(String(how))) throw new CruxError("bad-request", "Pick done, partly or stuck.");
+		return api("/api/rooms/checkin", "POST", { code: roomCode(code), how });
+	}
 	/** "I'm focusing until …" for the count of people studying; a public room's id, or none. */
 	async function focus(until, room) {
 		const end = until == null ? null : new Date(String(until));
@@ -737,7 +745,7 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 		return true;
 	}
 
-	return { status, login, logout, units, files, download, reveal, hubRoot, study, catalog, saveSetup, skipSetup, addNote, removeNote, learn, makeGuide, openAt, local, openLocal, bytes, schemes, askScheme, rooms, roomHost, roomJoin, roomState, roomAct, roomLeave, focus, saveSolution, uploads, contributors, share, updateCheck, openUpdate, applyUpdate, aiToken };
+	return { status, login, logout, units, files, download, reveal, hubRoot, study, catalog, saveSetup, skipSetup, addNote, removeNote, learn, makeGuide, openAt, local, openLocal, bytes, schemes, askScheme, rooms, roomHost, roomJoin, roomState, roomAct, roomLeave, roomCheckin, focus, saveSolution, uploads, contributors, share, updateCheck, openUpdate, applyUpdate, aiToken };
 }
 
 /** Renderer commands. The caller has already checked the sender is the trusted app window. */
@@ -772,6 +780,7 @@ async function cruxControl(command, hub, parentWindow) {
 			case "roomState": return { ok: true, value: await hub.roomState(command.code) };
 			case "roomAct": return { ok: true, value: await hub.roomAct(command.code, command.action, command.extra) };
 			case "roomLeave": return { ok: true, value: await hub.roomLeave() };
+			case "roomCheckin": return { ok: true, value: await hub.roomCheckin(command.code, command.how) };
 			case "focus": return { ok: true, value: await hub.focus(command.until, command.room) };
 			case "uploads": return { ok: true, value: await hub.uploads(command.unit) };
 			case "contributors": return { ok: true, value: await hub.contributors() };

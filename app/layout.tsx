@@ -5,6 +5,7 @@ import "./globals.css";
 import "./crux-wallpaper.css";
 import "./crux-reader.css";
 import "./crux-rooms.css";
+import "./crux-phone.css"; // a narrow window, and Study from your phone in a phone's browser
 import { AppShell, SidebarProvider } from "@/components/sidebar";
 import { ActivityProvider } from "@/components/activity-dock";
 import { ServerEventsProvider } from "@/components/server-events";

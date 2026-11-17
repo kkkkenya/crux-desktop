@@ -54,3 +54,9 @@ html[data-motion="off"] .crux-room-panel, html[data-motion="off"] .crux-room-min
 /* above Crux's viewer (z 60), so the clock stays in sight while reading; on a narrow window, above the bottom bar */
 body:has(.crux-pdfview) .crux-room-panel, body:has(.crux-pdfview) .crux-room-mini { bottom: 64px; }
 @media (max-width: 720px) { .crux-room-panel, .crux-room-mini { bottom: calc(72px + env(safe-area-inset-bottom, 0px)); } }
+
+/* Study from your phone (components/crux-phone.tsx): the pairing code, on white so any camera reads it */
+.crux-phone-qr { width: 220px; height: 220px; padding: 8px; border-radius: 12px; background: #fff; }
+.crux-phone-qr svg { width: 100%; height: 100%; display: block; }
+.crux-room-link { justify-self: start; padding: 2px 0; border: 0; background: none; color: var(--primary); font: inherit; font-size: 13px; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+.crux-room-link:hover { text-decoration: underline; }

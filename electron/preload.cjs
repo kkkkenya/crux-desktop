@@ -108,6 +108,7 @@ contextBridge.exposeInMainWorld("lh", {
 		roomState: (code) => ipcRenderer.invoke("lh:crux:control", { op: "roomState", code }),
 		roomAct: (code, action, extra) => ipcRenderer.invoke("lh:crux:control", { op: "roomAct", code, action, extra }),
 		roomLeave: () => ipcRenderer.invoke("lh:crux:control", { op: "roomLeave" }),
+		roomCheckin: (code, how) => ipcRenderer.invoke("lh:crux:control", { op: "roomCheckin", code, how }),
 		focus: (until, room) => ipcRenderer.invoke("lh:crux:control", { op: "focus", until, room }),
 		// A file the tutor saved (solution_page), to open as a tab in Crux's viewer.
 		onOpen: (cb) => {
@@ -121,6 +122,20 @@ contextBridge.exposeInMainWorld("lh", {
 		updateCheck: () => ipcRenderer.invoke("lh:crux:control", { op: "updateCheck" }),
 		openUpdate: (url) => ipcRenderer.invoke("lh:crux:control", { op: "openUpdate", url }),
 		applyUpdate: () => ipcRenderer.invoke("lh:crux:control", { op: "applyUpdate" }),
+	},
+	// Study from your phone (electron/crux-remote.cjs): turned on and off here, on the laptop only.
+	remote: {
+		status: () => ipcRenderer.invoke("lh:remote:control", { op: "status" }),
+		enable: () => ipcRenderer.invoke("lh:remote:control", { op: "enable" }),
+		disable: () => ipcRenderer.invoke("lh:remote:control", { op: "disable" }),
+		newCode: () => ipcRenderer.invoke("lh:remote:control", { op: "newCode" }),
+		removePhone: (id) => ipcRenderer.invoke("lh:remote:control", { op: "removePhone", id }),
+		setAwake: (on) => ipcRenderer.invoke("lh:remote:control", { op: "setAwake", on }),
+		onProgress: (cb) => {
+			const listener = (_event, p) => cb(p);
+			ipcRenderer.on("lh:remote:progress", listener);
+			return () => ipcRenderer.removeListener("lh:remote:progress", listener);
+		},
 	},
 	expandWindow: () => ipcRenderer.send("lh:expand-window"),
 	onZoom: (cb) => {

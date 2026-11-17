@@ -9,7 +9,8 @@ import type { CruxBridge } from "@/components/crux-hub";
 import { length, phaseAt, publicPhase, settle, type PublicRoomId, type RoomClock, type RoomPlan, type RoomView } from "@/lib/crux-room-clock";
 
 export interface RoomPerson { key: string; name: string; host: boolean; here: boolean; me: boolean }
-export interface RoomState { now: number; room: { code: string; name: string; unit: string | null; clock: RoomClock; version: number; locked: boolean; host: boolean }; people: RoomPerson[] }
+export interface RoomWork { text: string; fileId: string | null; fileName: string | null; page: number | null }
+export interface RoomState { now: number; room: { code: string; name: string; unit: string | null; clock: RoomClock; version: number; locked: boolean; host: boolean; work?: RoomWork | null }; people: RoomPerson[]; checkin?: { round: number; mine: string | null; counts: { done: number; partly: number; stuck: number } | null } }
 export interface RoomsList { now: number; public: { id: PublicRoomId; name: string; focus: number; block: number; count: number | null }[]; mine: { code: string; name: string } | null }
 
 const KEY = "crux:room";
@@ -102,7 +103,7 @@ export async function refreshRoom() {
 		// no connection: keep the last state; the clock runs on its own
 	}
 }
-export async function roomAct(action: string, extra: { plan?: Partial<RoomPlan>; name?: string; person?: string } = {}) {
+export async function roomAct(action: string, extra: { plan?: Partial<RoomPlan>; name?: string; person?: string; work?: RoomWork | null } = {}) {
 	prime();
 	if (!st.code) return;
 	try {
@@ -115,6 +116,12 @@ export async function roomAct(action: string, extra: { plan?: Partial<RoomPlan>;
 		if (s === 410) { gone((e as Error).message); return; }
 		throw e;
 	}
+}
+/** A check-in at a break: done, partly or stuck. The host sees counts once 3 have answered, never who. */
+export async function roomCheckin(how: "done" | "partly" | "stuck") {
+	if (!st.code) return;
+	const v = await call(bridge()?.roomCheckin?.(st.code, how));
+	adopt(v);
 }
 export async function leaveRoom() {
 	gen++;

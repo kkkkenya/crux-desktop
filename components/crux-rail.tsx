@@ -13,12 +13,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
 	DumbbellIcon, GraduationCapIcon, KeyboardIcon, LibraryIcon, LogOutIcon, NetworkIcon, PanelLeftIcon, PlusIcon, SearchIcon, SettingsIcon, SparklesIcon,
-	type LucideIcon, FileCheck2Icon, UsersIcon,
+	type LucideIcon, FileCheck2Icon, UsersIcon, SmartphoneIcon,
 } from "lucide-react";
 import { TIER_NAME, useCruxAccount } from "@/components/crux-account";
 import { HubDialog } from "@/components/crux-hub";
 import { SchemesDialog } from "@/components/crux-schemes";
 import { RoomsDialog } from "@/components/crux-rooms";
+import { PhoneDialog } from "@/components/crux-phone";
 import { openCruxSetup } from "@/components/crux-study";
 import { LhMark, PLAN_STAR, PlanStars } from "@/components/lh-mark";
 import { cn } from "@/lib/utils";
@@ -46,6 +47,7 @@ export const PALETTE: readonly PaletteItem[] = [
 	{ id: "surprise", label: "Surprise me", hint: "Crux picks something worth doing now", words: "random anything" },
 	{ id: "hub", label: "Hub files", hint: "Notes and past papers for your units", words: "past papers notes download study hub" },
 	{ id: "schemes", label: "Marking schemes", hint: "The scheme for a paper, without a lesson", words: "marking scheme answers solutions memo cat exam" },
+	{ id: "phone", label: "Study from your phone", hint: "Leave this laptop on and study from your phone", words: "phone mobile remote school away tunnel" },
 	{ id: "rooms", label: "Study rooms", hint: "Study with others on one clock", words: "room host join code pomodoro focus timer together class" },
 	{ id: "sessions", label: "Show or hide sessions", hint: "Your earlier sessions", shortcut: "Ctrl+B", words: "history list sidebar" },
 	{ id: "find-session", label: "Search your sessions", hint: "Find an earlier session by name", shortcut: "Ctrl+Shift+F", words: "find history" },
@@ -172,6 +174,7 @@ export function CruxRail({ sessionsOpen, onToggleSessions, onOpenSettings }: { s
 	const [hub, setHub] = useState(false);
 	const [schemes, setSchemes] = useState(false);
 	const [rooms, setRooms] = useState(false);
+	const [phone, setPhone] = useState(false);
 	const [menu, setMenu] = useState(false);
 	const [surprising, setSurprising] = useState(false);
 
@@ -193,6 +196,7 @@ export function CruxRail({ sessionsOpen, onToggleSessions, onOpenSettings }: { s
 			case "hub": setHub(true); break;
 			case "schemes": setSchemes(true); break;
 			case "rooms": setRooms(true); break;
+			case "phone": setPhone(true); break;
 			case "sessions": onToggleSessions(); break;
 			case "find-session": if (!sessionsOpen) onToggleSessions(); setTimeout(() => runAction("sessions-search"), 250); break;
 			case "graph": router.push("/"); break;
@@ -254,6 +258,11 @@ export function CruxRail({ sessionsOpen, onToggleSessions, onOpenSettings }: { s
 							<button type="button" role="menuitem" onClick={() => { setMenu(false); openCruxSetup(); }} className="mt-3 flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
 								<GraduationCapIcon className="size-3.5" aria-hidden />Set up my units
 							</button>
+							{typeof window !== "undefined" && typeof window.lh?.remote === "object" && (
+								<button type="button" role="menuitem" onClick={() => { setMenu(false); setPhone(true); }} className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
+									<SmartphoneIcon className="size-3.5" aria-hidden />Study from your phone
+								</button>
+							)}
 							<button type="button" role="menuitem" onClick={() => { setMenu(false); void signOut(); }} className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
 								<LogOutIcon className="size-3.5" aria-hidden />Sign out
 							</button>
@@ -265,6 +274,7 @@ export function CruxRail({ sessionsOpen, onToggleSessions, onOpenSettings }: { s
 			{hub && <HubDialog bridge={typeof window === "undefined" ? undefined : window.lh?.crux} onClose={() => setHub(false)} />}
 			{schemes && <SchemesDialog bridge={typeof window === "undefined" ? undefined : window.lh?.crux} onClose={() => setSchemes(false)} />}
 			{rooms && <RoomsDialog onClose={() => setRooms(false)} />}
+			{phone && <PhoneDialog onClose={() => setPhone(false)} />}
 		</nav>
 	);
 }

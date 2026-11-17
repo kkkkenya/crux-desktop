@@ -88,6 +88,8 @@ declare global {
 			onOpenSettings?: (cb: (section: string) => void) => () => void;
 			/** Crux account and hub files (electron/crux-hub.cjs). */
 			crux?: CruxBridge;
+			/** Study from your phone (electron/crux-remote.cjs); a phone's page has remote: true instead. */
+			remote?: import("@/components/crux-phone").RemoteBridge | true;
 		};
 	}
 }

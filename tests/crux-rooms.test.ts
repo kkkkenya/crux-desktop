@@ -87,3 +87,16 @@ it("Crux's refusals come back with their words and status, so the room can react
 	const r = await cruxControl({ op: "roomAct", code: "KXQT", action: "pause", extra: { version: 1 } }, hub, null);
 	assert.deepEqual([r.ok, r.error, r.status], [false, "The room changed. Try again.", 409]);
 });
+
+it("classroom tools through the bridge: today's work is cleaned to its fields, check-ins take only done, partly or stuck", async () => {
+	const { hub, calls } = fakeHub(() => ok({}));
+	await cruxControl({ op: "roomAct", code: "KXQT", action: "work", extra: { version: 2, work: { text: "CAT 1, Q3", fileId: "3691", fileName: "CAT 1.pdf", page: 2, extra: "x" } } }, hub, null);
+	assert.deepEqual(calls[0]!.body, { code: "KXQT", action: "work", version: 2, work: { text: "CAT 1, Q3", fileId: "3691", fileName: "CAT 1.pdf", page: 2 } });
+	await cruxControl({ op: "roomAct", code: "KXQT", action: "work", extra: { work: { text: "x", fileId: "local-3" } } }, hub, null);
+	assert.equal((calls[1]!.body as { work: { fileId: unknown } }).work.fileId, null, "a private file is never sent");
+	await cruxControl({ op: "roomAct", code: "KXQT", action: "work", extra: { work: null } }, hub, null);
+	assert.equal((calls[2]!.body as { work: unknown }).work, null);
+	await cruxControl({ op: "roomCheckin", code: "KXQT", how: "stuck" }, hub, null);
+	assert.deepEqual(calls[3], { path: "/api/rooms/checkin", method: "POST", body: { code: "KXQT", how: "stuck" } });
+	assert.equal((await cruxControl({ op: "roomCheckin", code: "KXQT", how: "great" }, hub, null)).code, "bad-request");
+});
