@@ -33,9 +33,11 @@ const PHONE_OPS = new Set([
 	"local", "openLocal", "bytes", "schemes", "askScheme", "uploads", "contributors", "share",
 	"rooms", "roomHost", "roomJoin", "roomState", "roomAct", "roomLeave", "roomCheckin", "focus",
 ]);
-// API routes a phone may not use at all, and ones it may only read.
-const BLOCKED = /^\/api\/(keys|subscriptions|custom-provider|claude-code)(\/|$)/;
+// API routes a phone may use (everything else, including keys, providers, subscriptions and Claude Code, is
+// laptop-only), and the ones it may only read. A phone never deletes.
+const PHONE_API = /^\/api\/(chat|chats|events|graph|jobs|models|search|stt|activity|settings)(\/|$)/;
 const READ_ONLY = /^\/api\/settings(\/|$)/;
+const PHONE_UNUSED_DAYS = 30; // a phone not used for this long must pair again
 
 const sha = (s) => crypto.createHash("sha256").update(String(s)).digest("hex");
 const token = (bytes) => crypto.randomBytes(bytes).toString("base64url");
@@ -79,6 +81,7 @@ function createPhones(file, now = () => Date.now()) {
 			const list = load();
 			const phone = list.find((p) => p.id === id);
 			if (!phone || !sameHash(sha(key), phone.hash)) return null;
+			if (now() - phone.lastSeen > PHONE_UNUSED_DAYS * 864e5) { save(list.filter((p) => p.id !== id)); return null; }
 			if (now() - phone.lastSeen > 60e3) { phone.lastSeen = now(); save(list); }
 			return phone;
 		},
@@ -90,9 +93,20 @@ function createPhones(file, now = () => Date.now()) {
 
 /** What a phone may do with an API request: "pass", "laptop-only" (403), "read-only" (403 for writes). */
 function apiRule(method, pathname) {
-	if (BLOCKED.test(pathname)) return "laptop-only";
+	if (!PHONE_API.test(pathname)) return "laptop-only";
+	if (method === "DELETE") return "laptop-only";
 	if (READ_ONLY.test(pathname) && method !== "GET" && method !== "HEAD") return "laptop-only";
 	return "pass";
+}
+
+/** Only plain paths reach the app: no percent-encoding, dot segments, double slashes or backslashes, so a path is
+ * checked here exactly as the app server will read it (/%61pi/keys must not slip past the rules). */
+function canonicalPath(rawUrl) {
+	const raw = String(rawUrl || "");
+	if (!raw.startsWith("/") || raw.startsWith("//")) return null;
+	const pathname = raw.split(/[?#]/)[0];
+	if (/[%\\]|\/\.{1,2}(\/|$)|\/\//.test(pathname)) return null;
+	return pathname;
 }
 
 /** The script that gives a phone's page the window's bridge, over HTTP. Loaded first, before the app. */
@@ -125,7 +139,7 @@ const page = (title, body) => `<!doctype html><html lang="en"><head><meta charse
 /** Put the bridge script first in a page's <head>. */
 function inject(html) {
 	const tag = `<script src="${PREFIX}shim.js"></script>`;
-	return /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (m) => m + tag) : tag + html;
+	return /<head(\s[^>]*)?>/i.test(html) ? html.replace(/<head(\s[^>]*)?>/i, (m) => m + tag) : tag + html;
 }
 
 /** Bytes in a bridge reply go to the phone as base64. */
@@ -152,6 +166,7 @@ function createRemoteServer({ upstream, secret, control, phones, log = () => {} 
 	});
 
 	async function handle(req, res) {
+		if (canonicalPath(req.url) === null) return json(res, 400, { error: "That address is not valid." });
 		const url = new URL(req.url, "http://phone.invalid");
 		// pairing: the one door without a cookie
 		if (url.pathname === `${PREFIX}pair`) {
@@ -169,7 +184,7 @@ function createRemoteServer({ upstream, secret, control, phones, log = () => {} 
 		if (url.pathname === `${PREFIX}crux`) {
 			if (req.method !== "POST") return json(res, 405, { ok: false, error: "POST only." });
 			let command;
-			try { command = JSON.parse((await readBody(req, 40 * 1024 * 1024)).toString() || "{}"); } catch (e) { return json(res, e.status || 400, { ok: false, code: "bad-request", error: "That request was not valid." }); }
+			try { command = JSON.parse((await readBody(req, 72 * 1024 * 1024)).toString() || "{}"); } catch (e) { return json(res, e.status || 400, { ok: false, code: "bad-request", error: "That request was not valid." }); }
 			if (!command || !PHONE_OPS.has(command.op)) return json(res, 403, { ok: false, code: "laptop-only", error: "Do this on your laptop." });
 			if (command.op === "share" && typeof command.request?.bytes === "string") command.request.bytes = new Uint8Array(Buffer.from(command.request.bytes, "base64"));
 			return json(res, 200, forPhone(await control(command)));
@@ -232,23 +247,39 @@ function createRemoteServer({ upstream, secret, control, phones, log = () => {} 
  * The tunnel: Cloudflare's quick tunnel (no account; a new random link each start). cloudflared is downloaded once
  * into the app's data folder when the student first turns this on (about 55 MB; the size is shown first).
  */
-const CLOUDFLARED_URL = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe";
+const CLOUDFLARED_RELEASE = "https://api.github.com/repos/cloudflare/cloudflared/releases/latest";
+const CLOUDFLARED_ASSET = "cloudflared-windows-amd64.exe";
 const CLOUDFLARED_MB = 55;
 function cloudflaredPath(dir) { return path.join(dir, "cloudflared.exe"); }
-function hasCloudflared(dir) { try { return fs.statSync(cloudflaredPath(dir)).size > 20 * 1024 * 1024; } catch { return false; } }
+const fileHash = (file) => crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+/** The helper is there and is the exact file that was checked when it was downloaded (its hash is kept beside it). */
+function hasCloudflared(dir) {
+	try {
+		const want = fs.readFileSync(`${cloudflaredPath(dir)}.sha256`, "utf8").trim();
+		return /^[0-9a-f]{64}$/.test(want) && fileHash(cloudflaredPath(dir)) === want;
+	} catch { return false; }
+}
+/** Download the helper from Cloudflare's GitHub release and keep it only if its SHA-256 matches the digest GitHub
+ * publishes for that file. No digest, no helper. */
 async function downloadCloudflared(dir, onProgress = () => {}, fetchImpl = fetch) {
 	fs.mkdirSync(dir, { recursive: true });
 	const final = cloudflaredPath(dir), part = `${final}.part`;
-	const r = await fetchImpl(CLOUDFLARED_URL, { redirect: "follow" });
+	const meta = await fetchImpl(CLOUDFLARED_RELEASE, { headers: { accept: "application/vnd.github+json", "user-agent": "crux-harness" } });
+	if (!meta.ok) throw new Error(`The tunnel helper could not be found (${meta.status}). Try again later.`);
+	const asset = (await meta.json())?.assets?.find?.((a) => a?.name === CLOUDFLARED_ASSET);
+	const digest = /^sha256:([0-9a-f]{64})$/.exec(String(asset?.digest || ""))?.[1];
+	if (!asset?.browser_download_url || !digest) throw new Error("The tunnel helper's checksum is not published, so Crux won't run it. Try again later.");
+	const r = await fetchImpl(asset.browser_download_url, { redirect: "follow" });
 	if (!r.ok || !r.body) throw new Error(`The tunnel helper could not be downloaded (${r.status}).`);
-	const total = Number(r.headers.get("content-length")) || CLOUDFLARED_MB * 1024 * 1024;
+	const total = Number(r.headers.get("content-length")) || asset.size || CLOUDFLARED_MB * 1024 * 1024;
 	const out = fs.createWriteStream(part);
+	const hash = crypto.createHash("sha256");
 	let got = 0;
-	for await (const chunk of r.body) { got += chunk.length; out.write(chunk); onProgress(Math.min(1, got / total)); }
+	for await (const chunk of r.body) { got += chunk.length; hash.update(chunk); out.write(chunk); onProgress(Math.min(1, got / total)); }
 	await new Promise((resolve) => out.end(resolve));
-	const head = Buffer.alloc(2); const fd = fs.openSync(part, "r"); fs.readSync(fd, head, 0, 2, 0); fs.closeSync(fd);
-	if (got < 20 * 1024 * 1024 || head.toString() !== "MZ") { fs.rmSync(part, { force: true }); throw new Error("The tunnel helper download was incomplete. Try again on a steady connection."); }
+	if (hash.digest("hex") !== digest) { fs.rmSync(part, { force: true }); throw new Error("The tunnel helper did not match its published checksum, so it was deleted. Try again on a steady connection."); }
 	fs.renameSync(part, final);
+	fs.writeFileSync(`${final}.sha256`, digest);
 	return final;
 }
 /** Start the tunnel to the proxy; resolves with the public https link. */
@@ -268,4 +299,4 @@ function startTunnel(dir, port, log = () => {}, spawnImpl = spawn) {
 	});
 }
 
-module.exports = { createPhones, createRemoteServer, apiRule, inject, forPhone, deviceName, PHONE_OPS, SHIM, hasCloudflared, downloadCloudflared, startTunnel, CLOUDFLARED_MB, PREFIX, COOKIE };
+module.exports = { createPhones, createRemoteServer, apiRule, canonicalPath, inject, forPhone, deviceName, PHONE_OPS, SHIM, hasCloudflared, downloadCloudflared, startTunnel, CLOUDFLARED_MB, PREFIX, COOKIE };

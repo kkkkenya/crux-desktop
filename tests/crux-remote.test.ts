@@ -11,7 +11,9 @@ import path from "node:path";
 import { it } from "node:test";
 
 const require = createRequire(import.meta.url);
-const { createPhones, createRemoteServer, apiRule, inject, forPhone, deviceName, PREFIX, COOKIE } = require("../electron/crux-remote.cjs");
+const { createPhones, createRemoteServer, apiRule, canonicalPath, inject, forPhone, deviceName, downloadCloudflared, hasCloudflared, PREFIX, COOKIE } = require("../electron/crux-remote.cjs");
+import crypto from "node:crypto";
+import { phoneAccessOn } from "../src/server/file-access.ts";
 
 const tmp = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), "crux-remote-")), "phones.json");
 
@@ -52,7 +54,9 @@ it("keys, providers and subscriptions stay laptop-only; settings are read-only f
 	assert.equal(apiRule("POST", "/api/custom-provider"), "laptop-only");
 	assert.equal(apiRule("GET", "/api/settings"), "pass");
 	assert.equal(apiRule("PUT", "/api/settings/appearance"), "laptop-only");
-	assert.equal(apiRule("GET", "/api/settingsx"), "pass");
+	assert.equal(apiRule("GET", "/api/settingsx"), "laptop-only", "an allow-list: anything not named is laptop-only");
+	assert.equal(apiRule("DELETE", "/api/chats/abc"), "laptop-only", "a phone never deletes");
+	assert.equal(apiRule("GET", "/api/claude-code"), "laptop-only");
 });
 
 it("the page script goes first in <head>; bytes travel as base64; device names are short", () => {
@@ -67,7 +71,7 @@ it("the proxy: an unpaired phone sees only the pairing note; a paired one reache
 	const app = http.createServer((req, res) => {
 		seen.push({ path: req.url, desktop: req.headers["x-learnharness-desktop"] as string | undefined, cookie: req.headers.cookie });
 		if (req.url === "/") { res.writeHead(200, { "content-type": "text/html" }); res.end("<html><head></head><body>Crux</body></html>"); return; }
-		if (req.url === "/api/stream") {
+		if (req.url === "/api/events") {
 			res.writeHead(200, { "content-type": "text/event-stream" });
 			let n = 0; const t = setInterval(() => { res.write(`data: ${++n}\n\n`); if (n === 3) { clearInterval(t); res.end(); } }, 80);
 			return;
@@ -104,7 +108,7 @@ it("the proxy: an unpaired phone sees only the pairing note; a paired one reache
 		assert.equal((await fetch(`${base}/api/keys`, { headers: { cookie } })).status, 403);
 
 		const t0 = Date.now(); const times: number[] = [];
-		const stream = await fetch(`${base}/api/stream`, { headers: { cookie } });
+		const stream = await fetch(`${base}/api/events`, { headers: { cookie } });
 		const reader = stream.body!.getReader();
 		for (;;) { const { done } = await reader.read(); if (done) break; times.push(Date.now() - t0); }
 		assert.ok(times.length >= 2 && times[0]! < 200, `events arrive as they are sent (${times.join(", ")} ms)`);
@@ -116,4 +120,40 @@ it("the proxy: an unpaired phone sees only the pairing note; a paired one reache
 		assert.equal(calls.length, 1, "logout never reached the bridge");
 		assert.match(await (await fetch(`${base}${PREFIX}shim.js`, { headers: { cookie } })).text(), /window\.lh = /);
 	} finally { remote.stop(); app.close(); }
+});
+
+it("security review: encoded, dotted, doubled or absolute paths never reach the app; phones unused for 30 days must pair again", async () => {
+	for (const bad of ["/%61pi/keys", "/api/%6Beys", "/api/../api/keys", "/api/./keys", "//api/keys", `/api${String.fromCharCode(92)}keys`, "http://x/api/keys", "*"]) assert.equal(canonicalPath(bad), null, bad);
+	assert.equal(canonicalPath("/api/chat?q=%20"), "/api/chat", "a query may be encoded");
+	let t = 1_000_000;
+	const phones = createPhones(tmp(), () => t);
+	const { id, key } = phones.pair(phones.newCode().code, "x");
+	t += 31 * 864e5;
+	assert.equal(phones.check(`${id}.${key}`), null);
+	assert.equal(phones.list().length, 0);
+	assert.equal(inject("<html><header>x</header><head></head>"), `<html><header>x</header><head><script src="${PREFIX}shim.js"></script></head>`);
+});
+
+it("the tunnel helper is kept only when it matches GitHub's published checksum, and is checked again before each use", async () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "crux-cf-"));
+	const body = Buffer.from("MZ pretend helper");
+	const digest = crypto.createHash("sha256").update(body).digest("hex");
+	const fake = (sha: string | null) => async (url: string) => url.includes("api.github.com")
+		? new Response(JSON.stringify({ assets: [{ name: "cloudflared-windows-amd64.exe", browser_download_url: "https://example.invalid/cf.exe", size: body.length, ...(sha ? { digest: `sha256:${sha}` } : {}) }] }), { status: 200 })
+		: new Response(body, { status: 200 });
+	await assert.rejects(downloadCloudflared(dir, () => {}, fake(null)), /checksum is not published/);
+	await assert.rejects(downloadCloudflared(dir, () => {}, fake("0".repeat(64))), /did not match/);
+	assert.equal(hasCloudflared(dir), false);
+	await downloadCloudflared(dir, () => {}, fake(digest));
+	assert.equal(hasCloudflared(dir), true);
+	fs.writeFileSync(path.join(dir, "cloudflared.exe"), "MZ swapped");
+	assert.equal(hasCloudflared(dir), false, "a changed file is not used");
+});
+
+it("while phone access is on (its flag file exists), the tutor's file access is restricted", () => {
+	const flag = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "crux-flag-")), "on.flag");
+	assert.equal(phoneAccessOn(flag), false);
+	fs.writeFileSync(flag, "on");
+	assert.equal(phoneAccessOn(flag), true);
+	assert.equal(phoneAccessOn(undefined), false);
 });

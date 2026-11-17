@@ -237,6 +237,8 @@ function startServer(port) {
 					LH_DESKTOP_API_SECRET: desktopAPISecret,
 					// Where hub files are saved: the tutor may read there even in restricted mode.
 					CRUX_HUB_DIR: path.join(app.getPath("documents"), "Crux", "Hub"),
+					// While Study from your phone is on, this file exists and the tutor's file access is restricted.
+					LH_REMOTE_FLAG: path.join(app.getPath("userData"), "remote", "on.flag"),
 				},
 				stdio: ["ignore", "pipe", "pipe", "ipc"],
 			},
@@ -786,7 +788,10 @@ async function main() {
 	let tunnel = null, blocker = null, remoteBusy = null;
 	const remoteState = (extra = {}) => ({ on: Boolean(tunnel), url: tunnel?.url ?? null, phones: phones.list(), codeOpen: phones.codeOpen(), helper: hasCloudflared(remoteDir), helperMB: CLOUDFLARED_MB, awake: blocker !== null, ...extra });
 	const pairLink = () => { const { code, expiresAt } = phones.newCode(); return { pairUrl: `${tunnel.url}${REMOTE_PREFIX}pair?code=${code}`, expiresAt }; };
-	const stopRemote = () => { tunnel?.stop(); tunnel = null; remote.stop(); if (blocker !== null) { powerSaveBlocker.stop(blocker); blocker = null; } };
+	const remoteFlag = path.join(remoteDir, "on.flag");
+	const flag = (on) => { try { if (on) { fs.mkdirSync(remoteDir, { recursive: true }); fs.writeFileSync(remoteFlag, "on"); } else fs.rmSync(remoteFlag, { force: true }); } catch (e) { log(`remote flag: ${e.message}`); } };
+	flag(false); // a flag left by a crash: phone access starts off
+	const stopRemote = () => { tunnel?.stop(); tunnel = null; remote.stop(); flag(false); if (blocker !== null) { powerSaveBlocker.stop(blocker); blocker = null; } };
 	app.on("before-quit", stopRemote);
 	ipcMain.handle("lh:remote:control", async (event, command) => {
 		const win = BrowserWindow.fromWebContents(event.sender);
@@ -800,6 +805,7 @@ async function main() {
 					remoteBusy = (async () => {
 						if (!hasCloudflared(remoteDir)) await downloadCloudflared(remoteDir, (p) => { if (!win.isDestroyed()) win.webContents.send("lh:remote:progress", { step: "download", p }); });
 						if (!win.isDestroyed()) win.webContents.send("lh:remote:progress", { step: "tunnel" });
+						flag(true); // before any phone can reach the tutor
 						const port = await remote.start();
 						tunnel = await startTunnel(remoteDir, port, log);
 						log(`remote: on at ${tunnel.url}`);

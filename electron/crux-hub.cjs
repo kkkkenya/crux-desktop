@@ -463,6 +463,8 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 		let pageOk = true;
 		if (html) { try { pageOk = isSolutionPage(fs.readFileSync(target, "utf8").slice(0, 2000)); } catch { pageOk = false; } }
 		if (!READABLE.test(target) || !pageOk) {
+			// only documents and pictures go to the system's opener: never a program, script or shortcut
+			if (!/\.(pdf|html?|md|txt|rtf|docx?|pptx?|xlsx?|od[tps]|csv|png|jpe?g|gif|webp)$/i.test(target)) throw new CruxError("failed", "This kind of file can't be opened from Crux.");
 			const problem = await shell.openPath(target);
 			if (problem) throw new CruxError("failed", `The file could not be opened: ${problem}`);
 			return;
