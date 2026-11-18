@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState } from "react";
 import { CopyIcon, SettingsIcon, UserIcon, UsersIcon, XIcon, ChevronDownIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { MessageResponse } from "@/components/ai-elements/message";
 import { cn } from "@/lib/utils";
 import { LIMITS, PRESETS, PUBLIC_ROOMS, type PublicRoomId, type RoomPlan, type RoomView } from "@/lib/crux-room-clock";
 import {
@@ -158,9 +159,9 @@ function Board({ board, me, run }: { board: RoomBoard; me: boolean; run: (f: () 
 	return (
 		<section className="crux-room-settings crux-board" aria-label="The board" aria-live="polite">
 			<div className="crux-room-row"><h3 className="crux-room-h flex-1">{board.title || "The board"}</h3>{!me && <Button size="xs" variant="ghost" className="cursor-pointer" onClick={() => setHidden(true)}>Stop following</Button>}</div>
-			{board.text && <p className="crux-board-text">{board.text}</p>}
-			{board.steps.length > 0 && <ol className="crux-board-steps">{board.steps.slice(0, board.step).map((x, i) => <li key={i}>{x}</li>)}</ol>}
-			{board.steps.length > 0 && <p className="crux-room-sub">Step {board.step} of {board.steps.length}</p>}
+			{board.text && <div className="crux-board-text"><MessageResponse>{board.text}</MessageResponse></div>}
+			{board.step > 0 && <ol className="crux-board-steps">{board.steps.slice(0, board.step).map((x, i) => <li key={i}><MessageResponse>{x}</MessageResponse></li>)}</ol>}
+			{(board.stepCount ?? board.steps.length) > 0 && <p className="crux-room-sub">Step {board.step} of {board.stepCount ?? board.steps.length}</p>}
 			{board.code && <pre className="crux-board-code"><code>{board.code}</code></pre>}
 			{board.output && <pre className="crux-board-code"><code>{board.output}</code></pre>}
 			{me && <div className="crux-room-actions"><Button size="sm" variant="outline" className="cursor-pointer" disabled={busy || board.step <= 0} onClick={() => go(board.step - 1)}>Back</Button><Button size="sm" className="cursor-pointer" disabled={busy || board.step >= board.steps.length} onClick={() => go(board.step + 1)}>Next step</Button></div>}

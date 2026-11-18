@@ -10,7 +10,8 @@ import { length, phaseAt, publicPhase, settle, type PublicRoomId, type RoomClock
 
 export interface RoomPerson { key: string; name: string; host: boolean; here: boolean; me: boolean }
 export interface RoomWork { text: string; fileId: string | null; fileName: string | null; page: number | null }
-export interface RoomBoard { on?: boolean; title: string; text: string; steps: string[]; step: number; code: string; output: string }
+/** Members get only the steps already shown, with stepCount the full number (Crux web rooms-routes.js boardFor). */
+export interface RoomBoard { on?: boolean; title: string; text: string; steps: string[]; step: number; stepCount?: number; code: string; output: string }
 export interface RoomState { now: number; room: { code: string; name: string; unit: string | null; clock: RoomClock; version: number; locked: boolean; host: boolean; work?: RoomWork | null; board?: RoomBoard | null }; people: RoomPerson[]; checkin?: { round: number; mine: string | null; counts: { done: number; partly: number; stuck: number } | null } }
 export interface RoomsList { now: number; public: { id: PublicRoomId; name: string; focus: number; block: number; count: number | null }[]; mine: { code: string; name: string } | null }
 
