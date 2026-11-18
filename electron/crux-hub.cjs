@@ -37,6 +37,8 @@ const OPS = new Set([
 	"schemes", "askScheme",
 	// Study rooms (2026-11-18): the same rooms as Crux web's Focus page (study/server/rooms-routes.js).
 	"rooms", "roomHost", "roomJoin", "roomState", "roomAct", "roomLeave", "roomCheckin", "focus",
+	// One door to Crux web's API for later features (fixplan-g G0): only the paths in WEB_PATHS.
+	"web",
 	// Sharing a file with the class, and the contributor board.
 	"uploads", "contributors", "share",
 	// The new-version notice.
@@ -45,6 +47,21 @@ const OPS = new Set([
 const ID = /^[\w-]{1,40}$/;
 const UNIT = /^[A-Z]{2,5} ?\d{3}[A-Z]?$/;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
+// Crux web API paths the window may call through "web" (fixplan-g G0), with the methods each takes. Anything else is
+// refused here before it leaves the computer; Crux web checks the account again on its side.
+const WEB_PATHS = {
+	"/api/state": ["GET"], "/api/learner": ["GET", "POST"], "/api/ai/usage": ["GET"], "/api/usage": ["GET"],
+	"/api/attempts/check": ["POST"], "/api/attempts/broke": ["POST"], "/api/teach": ["POST"], "/api/ask/passage": ["POST"],
+	"/api/predict": ["GET"], "/api/class": ["GET"], "/api/hub/desk": ["GET"], "/api/hub/sort": ["POST"], "/api/hub/has": ["GET"],
+};
+/** "/api/x?y=z" split and checked: a listed path, plain characters only, the query as simple key=value pairs. */
+function webTarget(method, raw) {
+	const s = String(raw || "");
+	const [p, q = ""] = s.split("?");
+	if (!Object.prototype.hasOwnProperty.call(WEB_PATHS, p) || !WEB_PATHS[p].includes(String(method))) return null;
+	if (q.length > 500 || !/^([\w-]+=[\w%.:@ +-]*(&[\w-]+=[\w%.:@ +-]*)*)?$/.test(q)) return null;
+	return q ? `${p}?${q}` : p;
+}
 // a room code: four letters, no vowels (study/server/defs.js ROOMS.codeLetters); a person's handle in a room
 const ROOM_CODE = /^[BCDFGHJKLMNPQRSTVWXZ]{4}$/;
 const ROOM_ACTIONS = new Set(["start", "pause", "resume", "skip", "settings", "end", "lock", "unlock", "remove", "host", "rename", "work", "board", "voice"]);
@@ -606,6 +623,13 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 		return api("/api/rooms/act", "POST", body);
 	}
 	async function roomLeave() { return api("/api/rooms/leave", "POST", {}); }
+	/** Crux web's API through the allow-list (G0). The body must be JSON-able and under 200 KB. */
+	async function web(method, target, body) {
+		const t = webTarget(method, target);
+		if (!t) throw new CruxError("bad-request", "That isn't something Crux Harness can ask Crux for.");
+		if (body !== undefined && JSON.stringify(body).length > 200 * 1024) throw new CruxError("bad-request", "That request is too big.");
+		return api(t, method, method === "GET" ? undefined : body ?? {});
+	}
 	async function roomCheckin(code, how) {
 		if (!["done", "partly", "stuck"].includes(String(how))) throw new CruxError("bad-request", "Pick done, partly or stuck.");
 		return api("/api/rooms/checkin", "POST", { code: roomCode(code), how });
@@ -754,7 +778,7 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 		return true;
 	}
 
-	return { status, login, logout, units, files, download, reveal, hubRoot, study, catalog, saveSetup, skipSetup, addNote, removeNote, learn, makeGuide, openAt, local, openLocal, bytes, schemes, askScheme, rooms, roomHost, roomJoin, roomState, roomAct, roomLeave, roomCheckin, focus, saveSolution, uploads, contributors, share, updateCheck, openUpdate, applyUpdate, aiToken };
+	return { status, login, logout, units, files, download, reveal, hubRoot, study, catalog, saveSetup, skipSetup, addNote, removeNote, learn, makeGuide, openAt, local, openLocal, bytes, schemes, askScheme, rooms, roomHost, roomJoin, roomState, roomAct, roomLeave, roomCheckin, focus, web, saveSolution, uploads, contributors, share, updateCheck, openUpdate, applyUpdate, aiToken };
 }
 
 /** Renderer commands. The caller has already checked the sender is the trusted app window. */
@@ -789,6 +813,7 @@ async function cruxControl(command, hub, parentWindow) {
 			case "roomState": return { ok: true, value: await hub.roomState(command.code) };
 			case "roomAct": return { ok: true, value: await hub.roomAct(command.code, command.action, command.extra) };
 			case "roomLeave": return { ok: true, value: await hub.roomLeave() };
+			case "web": return { ok: true, value: await hub.web(command.method, command.path, command.body) };
 			case "roomCheckin": return { ok: true, value: await hub.roomCheckin(command.code, command.how) };
 			case "focus": return { ok: true, value: await hub.focus(command.until, command.room) };
 			case "uploads": return { ok: true, value: await hub.uploads(command.unit) };
@@ -840,4 +865,4 @@ function attachCruxChild(child, getHub) {
 	return { dispose() { disposed = true; child.removeListener("message", listener); } };
 }
 
-module.exports = { createCruxHub, cruxControl, attachCruxChild, safeSegment, newerVersion, CRUX_ORIGIN: ORIGIN };
+module.exports = { createCruxHub, cruxControl, attachCruxChild, safeSegment, newerVersion, webTarget, CRUX_ORIGIN: ORIGIN };

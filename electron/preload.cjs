@@ -109,6 +109,8 @@ contextBridge.exposeInMainWorld("lh", {
 		roomAct: (code, action, extra) => ipcRenderer.invoke("lh:crux:control", { op: "roomAct", code, action, extra }),
 		roomLeave: () => ipcRenderer.invoke("lh:crux:control", { op: "roomLeave" }),
 		roomCheckin: (code, how) => ipcRenderer.invoke("lh:crux:control", { op: "roomCheckin", code, how }),
+		// Crux web's API through an allow-list (fixplan-g G0)
+		web: (method, path, body) => ipcRenderer.invoke("lh:crux:control", { op: "web", method, path, body }),
 		focus: (until, room) => ipcRenderer.invoke("lh:crux:control", { op: "focus", until, room }),
 		// A file the tutor saved (solution_page), to open as a tab in Crux's viewer.
 		onOpen: (cb) => {
@@ -122,6 +124,15 @@ contextBridge.exposeInMainWorld("lh", {
 		updateCheck: () => ipcRenderer.invoke("lh:crux:control", { op: "updateCheck" }),
 		openUpdate: (url) => ipcRenderer.invoke("lh:crux:control", { op: "openUpdate", url }),
 		applyUpdate: () => ipcRenderer.invoke("lh:crux:control", { op: "applyUpdate" }),
+	},
+	// The Hub files desk (electron/hub-desk.cjs): staff put files into the drive dumper's Drop folder. Laptop only.
+	desk: {
+		status: () => ipcRenderer.invoke("lh:desk:control", { op: "status" }),
+		pickFiles: () => ipcRenderer.invoke("lh:desk:control", { op: "pickFiles" }),
+		pickFolder: () => ipcRenderer.invoke("lh:desk:control", { op: "pickFolder" }),
+		hash: (path) => ipcRenderer.invoke("lh:desk:control", { op: "hash", path }),
+		drop: (files) => ipcRenderer.invoke("lh:desk:control", { op: "drop", files }),
+		retry: (name) => ipcRenderer.invoke("lh:desk:control", { op: "retry", name }),
 	},
 	// Study from your phone (electron/crux-remote.cjs): turned on and off here, on the laptop only.
 	remote: {

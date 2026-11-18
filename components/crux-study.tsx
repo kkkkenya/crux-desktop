@@ -550,10 +550,38 @@ export function rewardText(c: CruxUploads["credits"]): string {
 	return `${left} more file${left === 1 ? "" : "s"} the hub doesn't have, and you get Mimosa until ${nairobiDay(c.until)} and a contributor medal.`;
 }
 
+const SHARE_KINDS = [["notes", "Notes"], ["paper", "Past paper or CAT"], ["scheme", "Marking scheme"], ["tutorial", "Tutorial"], ["slides", "Slides"]] as const;
+const SHARE_WORDS: Record<string, string> = { notes: "Notes", paper: "Past Paper", scheme: "Marking Scheme", tutorial: "Tutorial", slides: "Slides" };
+/** The shared file's name with its kind word and year, so the drive dumper files it without guessing. */
+export function shareName(name: string, kind: string, year: string) {
+	const dot = name.lastIndexOf(".");
+	const [base, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ""];
+	const word = SHARE_WORDS[kind] ?? "";
+	let t = base.replace(/[_]+/g, " ").replace(/\s+/g, " ").trim();
+	if (word && !new RegExp(word.split(" ")[0] ?? word, "i").test(t)) t = `${t} ${word}`;
+	const y = /^(19|20)\d\d(\/\d{2,4})?$/.test(year.trim()) ? year.trim().replace("/", "-") : "";
+	if (y && !t.includes(y)) t = `${t} ${y}`;
+	return `${t}${ext}`.slice(0, 150);
+}
+/** Where a file already is on the Hub (by its sha256), or null. Needs Crux Harness 0.7.0; older ones skip the check. */
+async function alreadyOnHub(bytes: Uint8Array): Promise<string | null> {
+	const web = (window.lh as { crux?: { web?: (m: string, p: string) => Promise<{ ok: boolean; value?: unknown }> } } | undefined)?.crux?.web;
+	if (!web || !crypto?.subtle) return null;
+	try {
+		const hash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes as BufferSource)), (b) => b.toString(16).padStart(2, "0")).join("");
+		const r = await web("GET", `/api/hub/has?hash=${hash}`);
+		const v = r.ok ? (r.value as { exists?: boolean; where?: string }) : null;
+		return v?.exists ? v.where || "the Hub" : null;
+	} catch { return null; }
+}
+
 /** "Share with your class": the student's own file, posted to the unit on the Study Hub Discord with their consent. */
 export function ShareWithClass({ bridge, unit, ownUnit, onShared }: { bridge: CruxBridge; unit: string; ownUnit: boolean; onShared?: () => void }) {
 	const input = useRef<HTMLInputElement>(null);
-	const [file, setFile] = useState<File | null>(null);
+	const [files, setFiles] = useState<File[]>([]);
+	const [kind, setKind] = useState("notes");
+	const [year, setYear] = useState("");
+	const [done, setDone] = useState<string[]>([]);
 	const [consent, setConsent] = useState(false);
 	const [busy, setBusy] = useState(false);
 	const [problem, setProblem] = useState("");
@@ -565,14 +593,19 @@ export function ShareWithClass({ bridge, unit, ownUnit, onShared }: { bridge: Cr
 		return () => { live = false; };
 	}, [bridge, unit, ownUnit]);
 	const send = async () => {
-		if (!file || !consent) return;
+		if (!files.length || !consent) return;
 		setBusy(true); setProblem("");
-		const bytes = new Uint8Array(await file.arrayBuffer());
-		const reply = await bridge.share({ unit, name: file.name, bytes, consent }).catch(() => null);
-		setBusy(false);
-		if (!reply) { setProblem("The upload failed. Check your connection."); return; }
-		if (!reply.ok) { setProblem(reply.error); return; }
-		setInfo(reply.value); setFile(null); setConsent(false);
+		const notes: string[] = [];
+		for (const file of files) {
+			const bytes = new Uint8Array(await file.arrayBuffer());
+			const has = await alreadyOnHub(bytes);
+			if (has) { notes.push(`${file.name}: already on the Hub, in ${has}.`); continue; }
+			const reply = await bridge.share({ unit, name: shareName(file.name, kind, year), bytes, consent }).catch(() => null);
+			if (!reply) { setProblem("The upload failed. Check your connection."); break; }
+			if (!reply.ok) { setProblem(`${file.name}: ${reply.error}`); break; }
+			setInfo(reply.value); notes.push(`${file.name}: sent.`);
+		}
+		setBusy(false); setDone(notes); setFiles([]); setConsent(false);
 		onShared?.();
 	};
 	return (
@@ -592,16 +625,23 @@ export function ShareWithClass({ bridge, unit, ownUnit, onShared }: { bridge: Cr
 							<p className="mt-1 text-xs text-muted-foreground" data-testid="hub-reward">{rewardText(info.credits)}</p>
 						</div>
 					)}
-					<input ref={input} type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png,.ppt,.pptx,.doc,.docx"
-						onChange={(e) => { setFile(e.target.files?.[0] ?? null); setProblem(""); e.target.value = ""; }} />
+					<input ref={input} type="file" multiple className="hidden" accept=".pdf,.jpg,.jpeg,.png,.ppt,.pptx,.doc,.docx"
+						onChange={(e) => { setFiles(Array.from(e.target.files ?? []).slice(0, 10)); setProblem(""); setDone([]); e.target.value = ""; }} />
 					<div className="mt-3 flex flex-wrap items-center gap-2">
 						<Button type="button" size="xs" variant="outline" className="cursor-pointer" onClick={() => input.current?.click()} data-testid="hub-share-pick">
-							<UploadIcon />{file ? "Choose another file" : "Choose a file"}
+							<UploadIcon />{files.length ? "Choose other files" : "Choose files"}
 						</Button>
-						{file && <span className="min-w-0 truncate text-xs" title={file.name}>{file.name}</span>}
+						{files.length > 0 && <span className="min-w-0 truncate text-xs" title={files.map((f) => f.name).join(", ")}>{files.length === 1 ? files[0]?.name : `${files.length} files`}</span>}
 					</div>
-					{file && (
+					{files.length > 0 && (
 						<>
+							<div className="mt-3 flex flex-wrap gap-2 text-xs">
+								<label className="flex flex-col gap-0.5">What is it
+									<select value={kind} onChange={(e) => setKind(e.target.value)} className="rounded border border-border bg-background px-1.5 py-1" data-testid="hub-share-kind">
+										{SHARE_KINDS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
+								<label className="flex flex-col gap-0.5">Year (if it has one)
+									<input value={year} onChange={(e) => setYear(e.target.value)} placeholder="2024" inputMode="numeric" className="w-24 rounded border border-border bg-background px-1.5 py-1" data-testid="hub-share-year" /></label>
+							</div>
 							<label className="mt-3 flex cursor-pointer items-start gap-2 text-xs">
 								<input type="checkbox" className="mt-0.5" checked={consent} onChange={(e) => setConsent(e.target.checked)} data-testid="hub-share-consent" />
 								<span>I agree to share this file on the Study Hub Discord for {unit}, credited to me. It is mine to share (my notes, or a paper given to the class).</span>
@@ -612,6 +652,7 @@ export function ShareWithClass({ bridge, unit, ownUnit, onShared }: { bridge: Cr
 						</>
 					)}
 					{problem && <p role="alert" className="mt-2 text-xs text-destructive">{problem}</p>}
+					{done.length > 0 && <ul className="mt-2 text-xs text-muted-foreground" data-testid="hub-share-done">{done.map((d) => <li key={d}>{d}</li>)}</ul>}
 					{info && info.files.length > 0 && (
 						<ul className="mt-3 space-y-0.5 text-xs text-muted-foreground">
 							{info.files.slice(0, 5).map((f) => <li key={f.name + f.at} className="flex gap-2"><span className="min-w-0 flex-1 truncate">{f.name}</span><span>{STATUS_TEXT[f.status] ?? f.status}</span></li>)}

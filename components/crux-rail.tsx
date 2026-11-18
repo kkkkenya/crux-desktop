@@ -13,13 +13,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
 	DumbbellIcon, GraduationCapIcon, KeyboardIcon, LibraryIcon, LogOutIcon, NetworkIcon, PanelLeftIcon, PlusIcon, SearchIcon, SettingsIcon, SparklesIcon,
-	type LucideIcon, FileCheck2Icon, UsersIcon, SmartphoneIcon,
+	type LucideIcon, FileCheck2Icon, UsersIcon, SmartphoneIcon, InboxIcon,
 } from "lucide-react";
 import { TIER_NAME, useCruxAccount } from "@/components/crux-account";
 import { HubDialog } from "@/components/crux-hub";
 import { SchemesDialog } from "@/components/crux-schemes";
 import { RoomsDialog } from "@/components/crux-rooms";
 import { PhoneDialog } from "@/components/crux-phone";
+import { DeskDialog, useDeskAccess } from "@/components/crux-desk";
 import { openCruxSetup } from "@/components/crux-study";
 import { LhMark, PLAN_STAR, PlanStars } from "@/components/lh-mark";
 import { cn } from "@/lib/utils";
@@ -175,6 +176,8 @@ export function CruxRail({ sessionsOpen, onToggleSessions, onOpenSettings }: { s
 	const [schemes, setSchemes] = useState(false);
 	const [rooms, setRooms] = useState(false);
 	const [phone, setPhone] = useState(false);
+	const [desk, setDesk] = useState(false);
+	const deskOk = useDeskAccess();
 	const [menu, setMenu] = useState(false);
 	const [surprising, setSurprising] = useState(false);
 
@@ -231,6 +234,7 @@ export function CruxRail({ sessionsOpen, onToggleSessions, onOpenSettings }: { s
 			<RailButton icon={LibraryIcon} label="Hub files" onClick={() => setHub(true)} testid="rail-hub" anim="lid" />
 			<RailButton icon={FileCheck2Icon} label="Marking schemes" onClick={() => setSchemes(true)} testid="rail-schemes" anim="lift" />
 			<RailButton icon={UsersIcon} label="Study rooms" onClick={() => setRooms(true)} testid="rail-rooms" anim="lift" />
+			{deskOk && <RailButton icon={InboxIcon} label="Hub files desk" onClick={() => setDesk(true)} testid="rail-desk" anim="lid" />}
 			<RailButton icon={SparklesIcon} label={surprising ? "Picking something…" : "Surprise me"} onClick={() => void surprise()} testid="rail-surprise" anim="twinkle" />
 			<span className="flex-1" />
 			<RailButton icon={KeyboardIcon} label="Keyboard shortcuts (?)" onClick={() => runAction("cheat-sheet")} testid="rail-shortcuts" anim="tap" />
@@ -275,6 +279,7 @@ export function CruxRail({ sessionsOpen, onToggleSessions, onOpenSettings }: { s
 			{schemes && <SchemesDialog bridge={typeof window === "undefined" ? undefined : window.lh?.crux} onClose={() => setSchemes(false)} />}
 			{rooms && <RoomsDialog onClose={() => setRooms(false)} />}
 			{phone && <PhoneDialog onClose={() => setPhone(false)} />}
+			{desk && <DeskDialog onClose={() => setDesk(false)} />}
 		</nav>
 	);
 }

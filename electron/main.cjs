@@ -34,6 +34,7 @@ const { desktopAPIHeaders } = require("./desktop-api.cjs");
 const { openWebSubscriptionBrowser } = require("./web-subscription-browser.cjs");
 const { createCruxHub, cruxControl, attachCruxChild } = require("./crux-hub.cjs");
 const { activePatch, cleanOld, disablePatch } = require("./crux-patch.cjs");
+const desk = require("./hub-desk.cjs");
 const { createPhones, createRemoteServer, hasCloudflared, downloadCloudflared, startTunnel, CLOUDFLARED_MB, PREFIX: REMOTE_PREFIX } = require("./crux-remote.cjs");
 const { randomBytes } = require("node:crypto");
 const { spawn } = require("node:child_process");
@@ -827,6 +828,43 @@ async function main() {
 			stopRemote();
 			return { ok: false, error: err?.message || "Study from your phone could not start." };
 		}
+	});
+
+	// The Hub files desk: the drive dumper's folder on this PC (a saved choice, else found), and what's in it.
+	const deskPrefs = path.join(app.getPath("userData"), "hub-desk.json");
+	const deskPicked = new Set(); // Drop and hash take only files picked in the desk's own dialog
+	const deskHome = () => { let saved = null; try { saved = JSON.parse(fs.readFileSync(deskPrefs, "utf8")).home || null; } catch { /* none */ } return desk.findHome(saved); };
+	ipcMain.handle("lh:desk:control", async (event, command) => {
+		const win = BrowserWindow.fromWebContents(event.sender);
+		if (!trustedAppWindows.has(win) || !trustedSender(event, new URL(url).origin, BrowserWindow)) throw new Error("Untrusted desktop request.");
+		try {
+			switch (command?.op) {
+				case "status": return { ok: true, value: desk.status(deskHome()) };
+				case "pickFiles": {
+					const r = await dialog.showOpenDialog(win, { title: "Files for the Hub", properties: ["openFile", "multiSelections"] });
+					if (!r.canceled) for (const p of r.filePaths) deskPicked.add(p);
+					return { ok: true, value: r.canceled ? [] : r.filePaths.map((p) => { let size = 0; try { size = fs.statSync(p).size; } catch { /* gone */ } return { path: p, name: path.basename(p), size }; }) };
+				}
+				case "pickFolder": {
+					const r = await dialog.showOpenDialog(win, { title: "The Hub Dumper folder in Google Drive", properties: ["openDirectory"] });
+					if (r.canceled || !r.filePaths[0]) return { ok: true, value: desk.status(deskHome()) };
+					if (!desk.findHome(r.filePaths[0])) return { ok: false, error: "That folder has no Drop folder inside. Pick the Hub Dumper folder." };
+					fs.writeFileSync(deskPrefs, JSON.stringify({ home: r.filePaths[0] }));
+					return { ok: true, value: desk.status(deskHome()) };
+				}
+				case "hash":
+					if (!deskPicked.has(String(command.path))) return { ok: false, error: "Choose the file in the desk first." };
+					return { ok: true, value: await desk.sha256(String(command.path)) };
+				case "drop": {
+					const files = (Array.isArray(command.files) ? command.files : []).filter((f) => deskPicked.has(String(f?.path)));
+					const out = await desk.dropFiles(deskHome(), files);
+					for (const o of out) if (o.name) deskPicked.delete(o.path);
+					return { ok: true, value: out };
+				}
+				case "retry": return { ok: true, value: desk.retry(deskHome(), command.name) };
+				default: return { ok: false, error: "Unknown request." };
+			}
+		} catch (err) { return { ok: false, code: err?.code || "failed", error: err?.message || "The desk could not do that." }; }
 	});
 
 	ipcMain.handle("lh:attachment:pick", (event, mode) => pickAttachmentPath(event, mode, {

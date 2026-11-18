@@ -38,7 +38,7 @@ it("newerVersion compares x.y.z numerically", () => {
 it("a newer release on Crux web is offered, with its link and note", async () => {
 	const asked = serve({ version: "0.7.0", url: RELEASE, notes: "Hosted models." });
 	const u = await hub("0.6.0").updateCheck();
-	assert.deepEqual(u, { available: true, version: "0.7.0", current: "0.6.0", url: RELEASE, notes: "Hosted models." });
+	assert.deepEqual(u, { available: true, version: "0.7.0", current: "0.6.0", url: RELEASE, notes: "Hosted models.", patch: false });
 	assert.match(asked[0]!, /\/desktop\/latest\.json$/);
 });
 

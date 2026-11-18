@@ -31,7 +31,7 @@ const PREFIX = "/__crux-remote/";
 const PHONE_OPS = new Set([
 	"status", "units", "files", "download", "study", "catalog", "saveSetup", "addNote", "removeNote", "learn", "makeGuide", "openAt",
 	"local", "openLocal", "bytes", "schemes", "askScheme", "uploads", "contributors", "share",
-	"rooms", "roomHost", "roomJoin", "roomState", "roomAct", "roomLeave", "roomCheckin", "focus",
+	"rooms", "roomHost", "roomJoin", "roomState", "roomAct", "roomLeave", "roomCheckin", "focus", "web",
 ]);
 // API routes a phone may use (everything else, including keys, providers, subscriptions and Claude Code, is
 // laptop-only), and the ones it may only read. A phone never deletes.
@@ -127,7 +127,7 @@ const SHIM = `(() => {
 		if (op === "login" || op === "logout" || op === "applyUpdate" || op === "openUpdate" || op === "reveal" || op === "skipSetup") return no;
 		if (op === "updateCheck") return () => Promise.resolve({ ok: true, value: { available: false } });
 		if (op === "share") return (request) => call("share", { request: { ...request, bytes: b64(request.bytes) } });
-		const names = { files: ["unit"], download: ["unit", "id", "name"], catalog: ["course", "year"], saveSetup: ["setup"], addNote: ["note"], removeNote: ["id"], learn: ["unit", "topicId"], makeGuide: ["unit", "topicId", "fresh"], openAt: ["unit", "id", "name", "page"], local: ["unit"], openLocal: ["path", "page"], bytes: ["path"], schemes: ["unit"], askScheme: ["unit", "paperId"], uploads: ["unit"], roomHost: ["room"], roomJoin: ["code"], roomState: ["code"], roomAct: ["code", "action", "extra"], roomCheckin: ["code", "how"], focus: ["until", "room"] };
+		const names = { files: ["unit"], download: ["unit", "id", "name"], catalog: ["course", "year"], saveSetup: ["setup"], addNote: ["note"], removeNote: ["id"], learn: ["unit", "topicId"], makeGuide: ["unit", "topicId", "fresh"], openAt: ["unit", "id", "name", "page"], local: ["unit"], openLocal: ["path", "page"], bytes: ["path"], schemes: ["unit"], askScheme: ["unit", "paperId"], uploads: ["unit"], roomHost: ["room"], roomJoin: ["code"], roomState: ["code"], roomAct: ["code", "action", "extra"], roomCheckin: ["code", "how"], focus: ["until", "room"], web: ["method", "path", "body"] };
 		return (...a) => call(op, Object.fromEntries((names[op] || []).map((k, i) => [k, a[i]])));
 	} });
 	window.lh = { platform: "remote", remote: true, crux, getZoom: () => Promise.resolve(1), onZoom: () => () => {}, onUpdateStatus: () => () => {}, getUpdateState: () => Promise.resolve(null), checkForUpdates: () => Promise.resolve(null), onOpenSettings: () => () => {}, expandWindow: () => {} };
