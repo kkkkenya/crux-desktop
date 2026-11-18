@@ -6,7 +6,6 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import { it } from "node:test";
-import initSqlJs from "sql.js";
 import { runSql, sameResult } from "../lib/code/sql-run.js";
 import { languageOf } from "../lib/code/code-check.js";
 
@@ -16,7 +15,9 @@ it("the worker's copy of the SQL runner is the tested one, and every engine file
 });
 
 it("SQL runs on a fresh database and results compare by rows", async () => {
-	const SQL = await initSqlJs({ locateFile: (f: string) => createRequire(import.meta.url).resolve(`sql.js/dist/${f}`) });
+	const req = createRequire(import.meta.url);
+	const initSqlJs = req("sql.js") as (o: { locateFile: (f: string) => string }) => Promise<unknown>; // sql.js ships no types
+	const SQL = await initSqlJs({ locateFile: (f) => req.resolve(`sql.js/dist/${f}`) });
 	const r = runSql(SQL, "CREATE TABLE t (n INT); INSERT INTO t VALUES (2), (1); SELECT n FROM t;");
 	assert.deepEqual(r.results[0].rows, [[2], [1]]);
 	assert.equal(sameResult(r.results[0], { columns: ["x"], rows: [[1], [2]] }, false).same, true);
