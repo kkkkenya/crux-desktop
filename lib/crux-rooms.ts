@@ -12,7 +12,7 @@ export interface RoomPerson { key: string; name: string; host: boolean; here: bo
 export interface RoomWork { text: string; fileId: string | null; fileName: string | null; page: number | null }
 /** Members get only the steps already shown, with stepCount the full number (Crux web rooms-routes.js boardFor). */
 export interface RoomBoard { on?: boolean; title: string; text: string; steps: string[]; step: number; stepCount?: number; code: string; output: string }
-export interface RoomState { now: number; room: { code: string; name: string; unit: string | null; clock: RoomClock; version: number; locked: boolean; host: boolean; work?: RoomWork | null; board?: RoomBoard | null }; people: RoomPerson[]; checkin?: { round: number; mine: string | null; counts: { done: number; partly: number; stuck: number } | null } }
+export interface RoomState { now: number; room: { code: string; name: string; unit: string | null; clock: RoomClock; version: number; locked: boolean; host: boolean; work?: RoomWork | null; board?: RoomBoard | null; voice?: string | null; voiceOn?: boolean }; people: RoomPerson[]; checkin?: { round: number; mine: string | null; counts: { done: number; partly: number; stuck: number } | null } }
 export interface RoomsList { now: number; public: { id: PublicRoomId; name: string; focus: number; block: number; count: number | null }[]; mine: { code: string; name: string } | null }
 
 const KEY = "crux:room";
@@ -105,7 +105,7 @@ export async function refreshRoom() {
 		// no connection: keep the last state; the clock runs on its own
 	}
 }
-export async function roomAct(action: string, extra: { plan?: Partial<RoomPlan>; name?: string; person?: string; work?: RoomWork | null; board?: Partial<RoomBoard> } = {}) {
+export async function roomAct(action: string, extra: { plan?: Partial<RoomPlan>; name?: string; person?: string; work?: RoomWork | null; board?: Partial<RoomBoard>; on?: boolean } = {}) {
 	prime();
 	if (!st.code) return;
 	try {

@@ -335,6 +335,7 @@ export function RoomPanel() {
 						</div>
 					)}
 					<div className="crux-room-actions">
+						{room?.voice && <Button size="sm" className="cursor-pointer" onClick={() => window.open(room.voice!, "_blank", "noopener")}>Join voice</Button>}
 						{s.code && <Button variant="outline" size="sm" className="cursor-pointer" onClick={() => void invite()}><CopyIcon className="size-3.5" />{copied ? "Copied" : "Copy invite"}</Button>}
 						{me && room && <Button variant="outline" size="sm" className="cursor-pointer" aria-expanded={settings} onClick={() => { if (settings) setSettings(false); else { setPlan(room.clock.plan); setName(room.name); setSettings(true); } }}><SettingsIcon className="size-3.5" />Room settings</Button>}
 						<Button variant="ghost" size="sm" className="cursor-pointer" onClick={() => void leaveRoom()}>Leave</Button>
@@ -358,6 +359,7 @@ export function RoomPanel() {
 							<div className="crux-room-actions">
 								<Button type="submit" size="sm" className="cursor-pointer">Save</Button>
 								<Button type="button" size="sm" variant="outline" className="cursor-pointer" onClick={run(() => roomAct(room.locked ? "unlock" : "lock"))}>{room.locked ? "Unlock the room" : "Lock the room"}</Button>
+								{room.voiceOn && <Button type="button" size="sm" variant="outline" className="cursor-pointer" onClick={run(() => roomAct("voice", { on: !room.voice }))}>{room.voice ? "Remove the voice channel" : "Add a Discord voice channel"}</Button>}
 								{!ending ? <Button type="button" size="sm" variant="ghost" className="cursor-pointer" onClick={() => setEnding(true)}>End the room</Button>
 									: <Button type="button" size="sm" variant="destructive" className="cursor-pointer" onClick={run(() => roomAct("end"))}>End it for everyone</Button>}
 							</div>

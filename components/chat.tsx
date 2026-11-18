@@ -55,6 +55,7 @@ import { AbortTurnDialog, type AbortMode } from "@/components/abort-turn-dialog"
 import { ArrowRightIcon, DumbbellIcon, NotebookPenIcon, WaypointsIcon } from "lucide-react";
 import { CruxNotesPanel, useNotesOpen } from "@/components/crux-study";
 import { FilesChip } from "@/components/crux-files";
+import { CodeChip } from "@/components/crux-code";
 // Mirrors src/agent/crux-hosted.ts (server code is not imported into the page).
 const CRUX_BUSY_MARK = "[crux:gemini-busy]";
 import type { PlanBlockData } from "@/src/core";
@@ -1414,6 +1415,7 @@ export function Chat({
 					</Hint>
 					{/* Crux: papers, notes and marking schemes in a reader beside the lesson. */}
 					<FilesChip />
+					<CodeChip />
 					{/* Source documents (issue #175): read-only chips naming the
 					    documents this session was created from (hover shows the
 					    staged converted copy's path). Teach sessions only — the

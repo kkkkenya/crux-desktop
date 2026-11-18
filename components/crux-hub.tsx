@@ -59,7 +59,7 @@ export interface CruxBridge {
 	roomHost?: (room: { name?: string; unit?: string | null; plan?: Partial<import("@/lib/crux-room-clock").RoomPlan> }) => Promise<CruxReply<import("@/lib/crux-rooms").RoomState>>;
 	roomJoin?: (code: string) => Promise<CruxReply<import("@/lib/crux-rooms").RoomState>>;
 	roomState?: (code: string) => Promise<CruxReply<import("@/lib/crux-rooms").RoomState>>;
-	roomAct?: (code: string, action: string, extra?: { version?: number; plan?: Partial<import("@/lib/crux-room-clock").RoomPlan>; name?: string; person?: string; work?: import("@/lib/crux-rooms").RoomWork | null; board?: Partial<import("@/lib/crux-rooms").RoomBoard> }) => Promise<CruxReply<import("@/lib/crux-rooms").RoomState | { ended: true; now: number }>>;
+	roomAct?: (code: string, action: string, extra?: { version?: number; plan?: Partial<import("@/lib/crux-room-clock").RoomPlan>; name?: string; person?: string; work?: import("@/lib/crux-rooms").RoomWork | null; board?: Partial<import("@/lib/crux-rooms").RoomBoard>; on?: boolean }) => Promise<CruxReply<import("@/lib/crux-rooms").RoomState | { ended: true; now: number }>>;
 	roomLeave?: () => Promise<CruxReply<{ left: boolean }>>;
 	roomCheckin?: (code: string, how: string) => Promise<CruxReply<import("@/lib/crux-rooms").RoomState>>;
 	focus?: (until: string | null, room?: string | null) => Promise<CruxReply<{ others: number | null; room: number | null }>>;

@@ -65,3 +65,13 @@ body:has(.crux-pdfview) .crux-room-panel, body:has(.crux-pdfview) .crux-room-min
 .crux-board-text { margin: 0; font-size: 14px; white-space: pre-wrap; }
 .crux-board-steps { margin: 0; padding-left: 1.3em; display: grid; gap: 4px; font-size: 14px; }
 .crux-board-code { margin: 0; padding: 8px 10px; border-radius: 10px; background: rgba(0, 0, 0, 0.3); font: 12px/1.5 var(--font-jetbrains), monospace; white-space: pre; overflow-x: auto; }
+
+/* Code cells (components/crux-code.tsx): a panel beside the lesson, left of the room panel */
+.crux-code-panel { position: fixed; z-index: 61; left: 76px; bottom: 16px; width: min(460px, calc(100vw - 100px)); max-height: calc(100dvh - 96px); overflow-y: auto; display: grid; gap: 10px; padding: 14px; border-radius: 18px; animation: crux-room-in 0.28s var(--crux-spring, ease-out); }
+html[data-motion="off"] .crux-code-panel { animation: none; }
+.crux-code-input { width: 100%; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border); background: rgba(0, 0, 0, 0.3); color: var(--foreground); font: 12.5px/1.55 var(--font-jetbrains), monospace; tab-size: 4; resize: vertical; white-space: pre; }
+.crux-sql-wrap { max-height: 260px; overflow: auto; border-radius: 10px; border: 1px solid var(--border); }
+.crux-sql { border-collapse: collapse; width: 100%; font: 12px/1.4 var(--font-jetbrains), monospace; }
+.crux-sql th, .crux-sql td { padding: 5px 9px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+.crux-sql th { position: sticky; top: 0; background: rgba(28, 25, 23, 0.95); }
+@media (max-width: 720px) { .crux-code-panel { left: 8px; right: 8px; width: auto; bottom: calc(72px + env(safe-area-inset-bottom, 0px)); } }
