@@ -52,6 +52,9 @@ export interface ServerEvents {
 	 *  the chat; the client mirrors it by disabling the composer/dock
 	 *  submit. */
 	"compaction-changed": { chatId: string; running: boolean };
+	/** Crux hosted models (Track H3): the relay moved to another model on its own
+	 *  ("DeepSeek Flash is busy, so Gemini 3.8 Flash answered."). Open chats say it once. */
+	"crux-note": { chatId?: string; text: string };
 }
 
 export type ServerEventType = keyof ServerEvents;
@@ -69,6 +72,7 @@ export const SERVER_EVENT_TYPES = [
 	"subscriptions-changed",
 	"record-changed",
 	"compaction-changed",
+	"crux-note",
 ] as const satisfies readonly ServerEventType[];
 
 /** One notification: the type discriminates the payload. */

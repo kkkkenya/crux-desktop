@@ -14,6 +14,7 @@
 import { createProvider, type Api, type Model, type Provider } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { cruxDesktopConnected, cruxRequest } from "./crux-bridge.ts";
+import { emit } from "../core/events.ts";
 
 export const CRUX_HOSTED_PROVIDER = "crux";
 export const CRUX_BUSY_MARK = "[crux:gemini-busy]";
@@ -84,8 +85,35 @@ export function cruxHostedProvider(): Provider<Api> | null {
 		baseUrl: CRUX_RELAY_BASE,
 		auth: { apiKey: { name: "Crux account", resolve: async () => ({ auth: { apiKey: await relayKey() }, source: "Crux account" }) } },
 		models: toCruxModels(models),
-		api: openAICompletionsApi(),
+		api: withRelayNote(openAICompletionsApi()),
 	});
+}
+
+type Streams = ReturnType<typeof openAICompletionsApi>;
+type ResponseHook = (response: { status: number; headers: Record<string, string> }, model: Model<Api>) => unknown;
+
+/** Pure: the relay's note about a model switch, from its reply headers (Track H3). */
+export const relayNote = (headers: Record<string, string> | undefined): string | null => {
+	const text = headers?.["x-crux-note"] ?? headers?.["X-Crux-Note"];
+	return typeof text === "string" && text.trim() ? text.trim().slice(0, 200) : null;
+};
+
+/** The relay moves to the next live model itself when one fails for a reason that isn't the
+ *  student's, and says so in X-Crux-Note; open chats show it once ("crux-note"). */
+export function withRelayNote(api: Streams): Streams {
+	const hook = <O extends { onResponse?: ResponseHook } | undefined>(options: O): O => ({
+		...options,
+		onResponse: async (response: { status: number; headers: Record<string, string> }, model: Model<Api>) => {
+			const note = relayNote(response.headers);
+			if (note) emit("crux-note", { text: note });
+			await options?.onResponse?.(response, model);
+		},
+	}) as O;
+	return {
+		...api,
+		stream: (model, context, options) => api.stream(model, context, hook(options as never)),
+		streamSimple: (model, context, options) => api.streamSimple(model, context, hook(options as never)),
+	};
 }
 
 /** A model fingerprint, so the collection is only rebuilt when the plan's list changes. */

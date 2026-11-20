@@ -9,6 +9,8 @@ import {
 import { piEngineForSpec, type PiEngine } from "../agent/models.ts";
 import { connectionBackgroundAllowed as subscriptionBackgroundAllowed, connectionScopeCurrent, isSubscriptionProvider } from "../agent/subscription-connections.ts";
 import { nativeSubscriptionError } from "../agent/subscription-stream.ts";
+import { CRUX_HOSTED_PROVIDER } from "../agent/crux-hosted.ts";
+import { cruxErrorText, redactKeys } from "../core/crux-errors.ts";
 import { chatGPTStreamError } from "../agent/chatgpt-stream.ts";
 import { SubscriptionRequestCycle, type SubscriptionDispatchLifecycle } from "../agent/subscription-request-cycle.ts";
 import { reconstructRequestCause } from "../core/native-messages.ts";
@@ -587,6 +589,10 @@ export async function handleChatInput(
 			onError: (error) => {
 				if (conversation.provider === "chatgpt") return chatGPTStreamError(String(error));
 				if (isSubscriptionProvider(conversation.provider)) return nativeSubscriptionError(conversation.provider, String(error));
+				if (conversation.provider === CRUX_HOSTED_PROVIDER) {
+					console.error(`[chat ${chatId}] crux turn error:`, redactKeys(error instanceof Error ? `${error.message}\n${error.stack ?? ""}` : String(error)));
+					return cruxErrorText(error instanceof Error ? error.message : String(error));
+				}
 				console.error(`[chat ${chatId}] turn error:`, error);
 				return "An error occurred.";
 			},

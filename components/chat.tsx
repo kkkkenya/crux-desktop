@@ -6,6 +6,7 @@ import { visibleQueuedSteers } from "@/components/session-core";
 import { SetupDialog } from "@/components/setup-dialog";
 import { Hint } from "@/components/ui/hint";
 import { useModelSetup, selectedModelUnavailable, openModelPicker, ZeroKeysPill } from "@/components/setup-cta";
+import { cruxErrorText } from "@/src/core/crux-errors";
 import { useStickToBottomContext, type StickToBottomContext } from "use-stick-to-bottom";
 import {
 	Conversation,
@@ -587,6 +588,19 @@ export function Chat({
 	const catalogRef = useRef(catalog);
 	catalogRef.current = catalog;
 	const [selectedModel, setSelectedModel] = useState<string | undefined>();
+	// Crux hosted models (Track H3): "DeepSeek Flash is busy, so Gemini 3.8 Flash answered.", once per chat.
+	const [cruxNote, setCruxNote] = useState<string | null>(null);
+	const cruxNotesSaid = useRef(new Set<string>());
+	useServerEvent("crux-note", (p) => {
+		if (!selectedModel?.startsWith("crux:") || cruxNotesSaid.current.has(p.text)) return;
+		cruxNotesSaid.current.add(p.text);
+		setCruxNote(p.text);
+	});
+	useEffect(() => {
+		if (!cruxNote) return;
+		const t = setTimeout(() => setCruxNote(null), 10000);
+		return () => clearTimeout(t);
+	}, [cruxNote]);
 	const [setupOpen, setSetupOpen] = useState(false);
 	/** The last explicitly-sent draft (composer send): the
 	 *  refusal flow restores it into the composer, where it waits for the
@@ -1715,9 +1729,10 @@ export function Chat({
 								</span>
 							)}
 							{openingError && <p role="alert" className="text-sm text-destructive">{OPENING_PROMPT_FAILURE}</p>}
+							{cruxNote && <p role="status" data-testid="crux-note" className="text-sm text-muted-foreground">{cruxNote}</p>}
 							{error && (
 								<div className="flex items-center justify-between gap-3 rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm">
-									<span>Something went wrong: {error.message.replace(CRUX_BUSY_MARK, "").replace(/\s{2,}/g, " ")}</span>
+									<span>{selectedModel?.startsWith("crux:") ? cruxErrorText(error.message.replace(CRUX_BUSY_MARK, "")) : `Something went wrong: ${error.message.replace(CRUX_BUSY_MARK, "").replace(/\s{2,}/g, " ")}`}</span>
 									{/* Crux hosted models: Gemini was busy twice, so the plan opens DeepSeek for 30 minutes. */}
 									{error.message.includes(CRUX_BUSY_MARK) && (
 										<Button size="xs" data-testid="crux-use-deepseek" onClick={() => void switchToCruxFallback()}>
