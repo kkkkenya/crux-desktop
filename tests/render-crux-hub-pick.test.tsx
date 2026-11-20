@@ -39,16 +39,21 @@ describe("Hub file row page count", () => {
 	});
 });
 
-describe("new-version notice copy", async () => {
-	const { updateCopy } = await import("@/components/crux-study");
-	it("an in-app update says Update now and that the app restarts by itself", () => {
-		const c = updateCopy({ available: true, version: "0.6.4", current: "0.6.3", patch: true });
-		assert.equal(c.action, "Update now");
-		assert.match(c.body, /restarts by itself/);
+describe("the green update bar and the welcome", async () => {
+	const { barCopy, welcomeDue } = await import("@/components/crux-update-bar");
+	it("ready says the version and Restart; working says it restarts by itself; no GitHub, no Download", () => {
+		const ready = barCopy({ kind: "installer", version: "0.8.0", phase: "ready" });
+		assert.equal(ready.action, "Restart");
+		assert.match(ready.text, /0\.8\.0 is ready/);
+		assert.match(barCopy({ kind: "installer", version: "0.8.0", phase: "working" }).text, /opens again by itself/);
+		assert.match(barCopy({ kind: "patch", version: "0.7.1", phase: "working" }).text, /restarts by itself/);
+		for (const phase of ["ready", "working", "failed"] as const) assert.doesNotMatch(JSON.stringify(barCopy({ kind: "installer", version: "0.8.0", phase })), /Download|GitHub|installer/i);
 	});
-	it("an installer release says Download", () => {
-		const c = updateCopy({ available: true, version: "0.7.0", current: "0.6.3", patch: false });
-		assert.equal(c.action, "Download");
-		assert.match(c.body, /installer/);
+	it("the logo plays once per version after setup or an update, never with reduced motion", () => {
+		assert.equal(welcomeDue("0.7.1", null, false), true, "first open after setup");
+		assert.equal(welcomeDue("0.7.1", "0.7.0", false), true, "first open after an update");
+		assert.equal(welcomeDue("0.7.1", "0.7.1", false), false);
+		assert.equal(welcomeDue("0.7.1", null, true), false);
+		assert.equal(welcomeDue(undefined, null, false), false);
 	});
 });
