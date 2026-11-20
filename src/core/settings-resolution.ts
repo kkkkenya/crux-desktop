@@ -22,6 +22,7 @@
  *   src/store/prompt-overrides.ts (segment list derived from source).
  */
 
+import { cruxLiveModel } from "./crux-models.ts";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { ModelRole } from "../../config.ts";
 import type { ChatSettings } from "./contracts/chat.ts";
@@ -123,7 +124,7 @@ export function resolveConversationSpec(
 	chat: ChatSettings | undefined,
 	strong: EffectiveSlot | null,
 ): EffectiveModelSpec | null {
-	const model = chat?.model ?? (strong ? { provider: strong.provider, id: strong.id } : undefined);
+	const model = cruxLiveModel(chat?.model ?? (strong ? { provider: strong.provider, id: strong.id } : undefined));
 	if (!model) return null;
 	return {
 		provider: model.provider,
@@ -150,8 +151,9 @@ export function resolveRoleSpec(role: ModelRole, record: UserSettings | null): E
  *  to ride without the factory floor). */
 export function resolveSlot(slot: ModelSlot | undefined): EffectiveSlot | null {
 	if (!slot?.model) return null;
+	const live = cruxLiveModel(slot.model); // a paused Crux model (GLM) runs as DeepSeek (Track H1)
 	return {
-		provider: slot.model.provider, id: slot.model.id, thinkingLevel: slot.thinkingLevel,
+		provider: live.provider, id: live.id, thinkingLevel: slot.thinkingLevel,
 		...(slot.cacheRetention !== undefined ? { cacheRetention: slot.cacheRetention } : {}),
 	};
 }
@@ -169,7 +171,7 @@ export function resolveModelSpec(
 ): EffectiveModelSpec | undefined {
 	const slotName = ROLE_SLOT[role] as ModelSlotName | undefined;
 	const slot = slotName ? slots?.[slotName] : undefined;
-	const model = override?.model ?? slot?.model;
+	const model = cruxLiveModel(override?.model ?? slot?.model);
 	if (!model) return undefined;
 	return {
 		provider: model.provider,

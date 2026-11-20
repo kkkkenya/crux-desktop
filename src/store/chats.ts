@@ -11,6 +11,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { createHash } from "node:crypto";
 import { PATHS } from "../../config.ts";
+import { cruxLiveModel } from "../core/crux-models.ts";
 import { emit } from "../core/events.ts";
 import type { ChatStore } from "../core/ports.ts";
 import type { ChatRecord, ChatSettings, ChatSummary, ExtractionRunUsage, ImageSnapshot, PlanTree, SourceDocumentRef, TurnUsage } from "../core/contracts.ts";
@@ -79,7 +80,11 @@ function getChat(id: string): ChatRecord | null {
 		console.error(`[chat ${id}] record stamped with schema version ${v} > ${CURRENT_CHAT_VERSION} — this app build is older; refusing to read it`);
 		return null;
 	}
-	return parsed as ChatRecord;
+	const record = parsed as ChatRecord;
+	// a session saved on a paused Crux model (GLM) opens on DeepSeek (Track H1); written back on the next save
+	const model = record.settings?.model;
+	if (model) { const live = cruxLiveModel(model); if (live !== model) record.settings = { ...record.settings, model: live }; }
+	return record;
 }
 
 /** Projection for the session list; null when the record is absent or fails to project. */
