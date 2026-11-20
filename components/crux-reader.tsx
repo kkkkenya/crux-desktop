@@ -142,8 +142,13 @@ async function pageText(doc: PdfDoc, n: number): Promise<string> {
 
 // ---------------------------------------------------------------- one PDF page: picture plus selectable text
 
+// Each page's own shape (height / width), once read: pages of one file differ (a landscape cover, photos of a paper
+// joined into one PDF), and a box shaped like page 1 squashed them (Track H2). Until a page is read its box takes
+// page 1's shape; the browser's scroll anchoring keeps your place while boxes above you change size.
+const shapes = new WeakMap<PdfDoc, Map<number, number>>();
 function Page({ doc, n, width, ratio, onSeen, hit }: { doc: PdfDoc; n: number; width: number; ratio: number; onSeen: (n: number) => void; hit: string }) {
 	const box = useRef<HTMLDivElement>(null);
+	const [own, setOwn] = useState(() => shapes.get(doc)?.get(n) ?? ratio);
 	const canvas = useRef<HTMLCanvasElement>(null);
 	const text = useRef<HTMLDivElement>(null);
 	const [near, setNear] = useState(false);
@@ -165,7 +170,11 @@ function Page({ doc, n, width, ratio, onSeen, hit }: { doc: PdfDoc; n: number; w
 		void Promise.all([doc.getPage(n), pdfLib()]).then(([p, lib]) => {
 			const c = canvas.current, t = text.current;
 			if (gone || !c || !t) return;
-			const scale = width / p.getViewport({ scale: 1 }).width;
+			const one = p.getViewport({ scale: 1 });
+			if (!shapes.has(doc)) shapes.set(doc, new Map());
+			shapes.get(doc)!.set(n, one.height / one.width);
+			setOwn(one.height / one.width);
+			const scale = width / one.width;
 			const dpr = Math.min(window.devicePixelRatio || 1, 2);
 			const vp = p.getViewport({ scale: scale * dpr });
 			c.width = vp.width; c.height = vp.height;
@@ -193,7 +202,7 @@ function Page({ doc, n, width, ratio, onSeen, hit }: { doc: PdfDoc; n: number; w
 		return () => t.removeEventListener("drawn", light);
 	}, [hit]);
 	return (
-		<div ref={box} className="crux-pdf-page" data-page={n} style={{ width, height: width * ratio }}>
+		<div ref={box} className="crux-pdf-page" data-page={n} style={{ width, height: width * own }}>
 			<canvas ref={canvas} aria-label={`Page ${n}`} />
 			<div ref={text} className="textLayer" />
 		</div>
