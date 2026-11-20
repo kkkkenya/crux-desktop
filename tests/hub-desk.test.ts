@@ -70,6 +70,13 @@ it("Share: the kind word and year go into the student's file name, once", async 
 	assert.equal(shareName("notes", "notes", "soon"), "notes");
 });
 
+it("Share (Track H4): a long name keeps its extension and the kind word, within Crux web's 120 characters", async () => {
+	const { shareName } = await import("../components/crux-study");
+	const out = shareName(`${"EMM 314 work study complete lecture notes chapters one to five ".repeat(3)}.pdf`, "paper", "2025");
+	assert.ok(out.length <= 120, String(out.length));
+	assert.match(out, /Past Paper 2025\.pdf$/);
+});
+
 it("G0: the window reaches only listed Crux web paths, with their methods and a plain query", () => {
 	const { webTarget } = require("../electron/crux-hub.cjs");
 	assert.equal(webTarget("GET", "/api/hub/desk"), "/api/hub/desk");

@@ -557,11 +557,13 @@ export function shareName(name: string, kind: string, year: string) {
 	const dot = name.lastIndexOf(".");
 	const [base, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ""];
 	const word = SHARE_WORDS[kind] ?? "";
-	let t = base.replace(/[_]+/g, " ").replace(/\s+/g, " ").trim();
-	if (word && !new RegExp(word.split(" ")[0] ?? word, "i").test(t)) t = `${t} ${word}`;
+	const t = base.replace(/[_]+/g, " ").replace(/\s+/g, " ").trim();
 	const y = /^(19|20)\d\d(\/\d{2,4})?$/.test(year.trim()) ? year.trim().replace("/", "-") : "";
-	if (y && !t.includes(y)) t = `${t} ${y}`;
-	return `${t}${ext}`.slice(0, 150);
+	const tail = [word && !new RegExp(word.split(" ")[0] ?? word, "i").test(t) ? word : "", y && !t.includes(y) ? y : ""].filter(Boolean).join(" ");
+	// Crux web keeps 120 characters (hub-uploads.js safeName): shorten the student's words, never the kind, year or
+	// extension (a cut extension was refused as "not a PDF", Track H4).
+	const room = Math.max(1, 120 - ext.length - (tail ? tail.length + 1 : 0));
+	return `${[t.slice(0, room).trim(), tail].filter(Boolean).join(" ")}${ext}`;
 }
 /** Where a file already is on the Hub (by its sha256), or null. Needs Crux Harness 0.7.0; older ones skip the check. */
 async function alreadyOnHub(bytes: Uint8Array): Promise<string | null> {
