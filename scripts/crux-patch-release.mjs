@@ -79,6 +79,6 @@ if (up.status !== 0) fail("the upload failed");
 const web = process.env.CRUX_WEB_DIR || path.resolve(root, "..", "discord-sync-bot");
 const latestFile = path.join(web, "study", "web", "public", "desktop", "latest.json");
 const latest = JSON.parse(fs.readFileSync(latestFile, "utf8"));
-const firstLine = fs.readFileSync(notesFile, "utf8").split("\n").find((l) => l.startsWith("- **"))?.replace(/^- \*\*(.+?)\*\*.*$/, "$1") ?? "";
+const firstLine = fs.readFileSync(notesFile, "utf8").split(/\r?\n/).find((l) => l.startsWith("- **"))?.replace(/^- \*\*(.+?)\*\*.*$/, "$1") ?? "";
 fs.writeFileSync(latestFile, `${JSON.stringify({ ...latest, version, notes: firstLine || latest.notes, released: new Date().toISOString().slice(0, 10), patch }, null, 2)}\n`);
 console.log(`crux-patch-release: wrote ${latestFile}. Commit and push Crux web so installed apps see it.`);

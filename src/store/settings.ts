@@ -17,6 +17,7 @@
  * a value that would silently shift a knob.
  */
 
+import { cruxLiveModel } from "../core/crux-models.ts";
 import fs from "node:fs";
 import path from "node:path";
 import { SETTINGS_FILE } from "../../config.ts";
@@ -103,6 +104,10 @@ export function readSettings(): UserSettings | null {
 		// malformed policy that would silently restore unrestricted reads.
 		record.agent = { ...record.agent, fileAccess: { restricted: true, folders: [] } };
 	}
+	// A paused Crux model (GLM) in a slot or a role override reads as DeepSeek (Track H1): every reader of the record
+	// (the composer's label, a new session's stamp, the engines) gets the live model; the file is fixed on the next save.
+	for (const slot of Object.values(record.models ?? {})) if (slot?.model) slot.model = cruxLiveModel(slot.model) as typeof slot.model;
+	for (const role of Object.values(record.agent?.models ?? {})) if (role?.model) role.model = cruxLiveModel(role.model) as typeof role.model;
 	// Version chain (empty today): a future v2 migration slots in here —
 	// `if (record.version > CURRENT_SETTINGS_VERSION) …`. Unknown NEWER
 	// versions pass through untouched (the sanitizer preserved unknowns).

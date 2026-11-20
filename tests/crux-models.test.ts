@@ -38,3 +38,14 @@ it("a session saved on Crux GLM opens on DeepSeek", () => {
 	const opened = chatStore.getChat(chat.id);
 	assert.deepEqual(opened?.settings?.model, { provider: "crux", id: "deepseek-flash" });
 });
+
+it("the saved settings themselves read as DeepSeek: the composer label and new sessions use them (found in the installed 0.7.1)", async () => {
+	const { readSettings } = await import("../src/store/settings.ts");
+	const { SETTINGS_FILE } = await import("../config.ts");
+	fs.mkdirSync(path.dirname(SETTINGS_FILE), { recursive: true });
+	fs.writeFileSync(SETTINGS_FILE, JSON.stringify({ version: 1, models: { strong: { model: { provider: "crux", id: "glm-5.3" }, thinkingLevel: "medium" }, cheap: { model: { provider: "claude-code", id: "haiku" } } } }));
+	const record = readSettings();
+	assert.deepEqual(record?.models?.strong?.model, { provider: "crux", id: "deepseek-flash" });
+	assert.equal(record?.models?.strong?.thinkingLevel, "medium");
+	assert.deepEqual(record?.models?.cheap?.model, { provider: "claude-code", id: "haiku" });
+});
