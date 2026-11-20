@@ -17,7 +17,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
-const { applyPatch, currentVersion, failedVersions, usablePatch } = require("./crux-patch.cjs");
+const { activateStaged, applyPatch, currentVersion, failedVersions, stagedPatch, usablePatch } = require("./crux-patch.cjs");
 const { solutionProblems, withPolicy, isSolutionPage, solutionFileName } = require("./solution-page.cjs");
 
 const ORIGIN = (process.env.CRUX_ORIGIN || "https://crux.engineeringhub.site").replace(/\/+$/, "");
@@ -42,7 +42,7 @@ const OPS = new Set([
 	// Sharing a file with the class, and the contributor board.
 	"uploads", "contributors", "share",
 	// The new-version notice.
-	"updateCheck", "openUpdate", "applyUpdate",
+	"updateCheck", "openUpdate", "applyUpdate", "stageUpdate",
 ]);
 const ID = /^[\w-]{1,40}$/;
 const UNIT = /^[A-Z]{2,5} ?\d{3}[A-Z]?$/;
@@ -745,8 +745,31 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 		const patch = usablePatch(latest, app.getVersion(), current, failedVersions(app.getPath("userData")));
 		return { available: newerVersion(version, current), version, current, url, notes: text(latest.notes, 300), patch: Boolean(patch) };
 	}
-	// "Update now": the server zip named in latest.json, installed in place, then a restart (electron/crux-patch.cjs).
+	// Background download (0.8.0): the patch named in latest.json, unpacked beside the running one but not active yet.
+	// The window shows the green Restart bar once this resolves; Restart (applyUpdate) then takes a moment.
+	async function stageUpdate() {
+		const userData = app.getPath("userData");
+		let latest;
+		try {
+			const response = await fetch(`${ORIGIN}/desktop/latest.json`, { headers: { accept: "application/json" }, cache: "no-store", redirect: "error" });
+			latest = response.ok ? await response.json() : null;
+		} catch { throw new CruxError("offline", "Crux could not check for the update."); }
+		const ready = stagedPatch(userData, app.getVersion());
+		if (latest?.patch?.version && ready?.version === latest.patch.version) return { version: ready.version };
+		if (!latest?.patch) throw new CruxError("failed", "This update needs the installer.");
+		try {
+			return await applyPatch(latest.patch, { userData, shellVersion: app.getVersion(), activate: false });
+		} catch (err) { throw new CruxError("failed", err?.message || "The update failed."); }
+	}
+	// "Restart" / "Update now": the staged patch if there is one (instant), else the server zip named in latest.json,
+	// installed in place; then a restart (electron/crux-patch.cjs).
 	async function applyUpdate() {
+		const staged = activateStaged(app.getPath("userData"), app.getVersion());
+		if (staged) {
+			log?.(`update ${staged.version} switched on; restarting`);
+			setTimeout(() => { app.relaunch(); app.quit(); }, 300);
+			return true;
+		}
 		let latest;
 		try {
 			const response = await fetch(`${ORIGIN}/desktop/latest.json`, { headers: { accept: "application/json" }, cache: "no-store", redirect: "error" });
@@ -778,7 +801,7 @@ function createCruxHub({ app, BrowserWindow, session, shell, log = () => {} }) {
 		return true;
 	}
 
-	return { status, login, logout, units, files, download, reveal, hubRoot, study, catalog, saveSetup, skipSetup, addNote, removeNote, learn, makeGuide, openAt, local, openLocal, bytes, schemes, askScheme, rooms, roomHost, roomJoin, roomState, roomAct, roomLeave, roomCheckin, focus, web, saveSolution, uploads, contributors, share, updateCheck, openUpdate, applyUpdate, aiToken };
+	return { status, login, logout, units, files, download, reveal, hubRoot, study, catalog, saveSetup, skipSetup, addNote, removeNote, learn, makeGuide, openAt, local, openLocal, bytes, schemes, askScheme, rooms, roomHost, roomJoin, roomState, roomAct, roomLeave, roomCheckin, focus, web, saveSolution, uploads, contributors, share, updateCheck, openUpdate, applyUpdate, stageUpdate, aiToken };
 }
 
 /** Renderer commands. The caller has already checked the sender is the trusted app window. */
@@ -822,6 +845,7 @@ async function cruxControl(command, hub, parentWindow) {
 			case "updateCheck": return { ok: true, value: await hub.updateCheck() };
 			case "openUpdate": return { ok: true, value: await hub.openUpdate(command.url) };
 			case "applyUpdate": return { ok: true, value: await hub.applyUpdate() };
+			case "stageUpdate": return { ok: true, value: await hub.stageUpdate() };
 		}
 	} catch (err) {
 		// Errors cross IPC as data so the renderer can show the reason and react to the code.

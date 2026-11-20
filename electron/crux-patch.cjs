@@ -37,6 +37,8 @@ function setPublicKeyForTests(pem) { publicKey = pem; }
 const root = (userData) => path.join(userData, "server-patch");
 const activeFile = (userData) => path.join(root(userData), "active.json");
 const failedFile = (userData) => path.join(root(userData), "failed.json");
+// A patch downloaded in the background (0.8.0, owner 2026-11-20): unpacked but not active until the student taps Restart.
+const stagedFile = (userData) => path.join(root(userData), "staged.json");
 
 /** What the release key signs for one patch. */
 const signedText = (p) => `crux-harness-patch|${p.version}|${p.shell}|${String(p.sha256).toLowerCase()}`;
@@ -134,7 +136,7 @@ let busy = false;
  * Download, check and unpack a patch, then mark it active. Returns { version }. Throws a plain Error with a message
  * a student can read. fetcher: the global fetch, or a fake in tests. publicKey: tests only.
  */
-async function applyPatch(patch, { userData, shellVersion, fetcher = fetch }) {
+async function applyPatch(patch, { userData, shellVersion, fetcher = fetch, activate = true }) {
 	if (busy) throw new Error("An update is already being installed.");
 	busy = true;
 	try {
@@ -161,26 +163,50 @@ async function applyPatch(patch, { userData, shellVersion, fetcher = fetch }) {
 			fs.rmSync(target, { recursive: true, force: true });
 			fs.mkdirSync(target, { recursive: true });
 			fs.renameSync(path.join(out, "standalone"), path.join(target, "standalone"));
-			writeAtomic(activeFile(userData), JSON.stringify({ version: p.version, shell: p.shell, at: new Date().toISOString() }));
+			const mark = JSON.stringify({ version: p.version, shell: p.shell, at: new Date().toISOString() });
+			if (activate) writeAtomic(activeFile(userData), mark);
+			else writeAtomic(stagedFile(userData), mark); // Restart (activateStaged) switches to it in a moment
 		} finally {
 			try { fs.rmSync(work, { recursive: true, force: true }); } catch { /* locked: the next start removes it */ }
 		}
-		cleanOld(userData, p.version); // the running patch's files are locked until restart; the next start finishes the job
+		if (activate) cleanOld(userData, p.version); // the running patch's files are locked until restart; the next start finishes the job
 		return { version: p.version };
 	} finally {
 		busy = false;
 	}
 }
 
-/** Remove patch folders other than `keep` (and unpacking leftovers). Best effort: files in use stay until next time. */
+/** The background-downloaded patch, when it is still usable on this shell: { version } or null. */
+function stagedPatch(userData, shellVersion) {
+	try {
+		const s = JSON.parse(fs.readFileSync(stagedFile(userData), "utf8"));
+		if (!VERSION.test(s?.version) || s.shell !== shellVersion) return null;
+		if (!fs.existsSync(path.join(root(userData), s.version, "standalone", "server.js"))) return null;
+		if (compareVersions(s.version, currentVersion(userData, shellVersion)) <= 0 || failedVersions(userData).includes(s.version)) return null;
+		return { version: s.version, shell: s.shell };
+	} catch { return null; }
+}
+
+/** Make the staged patch the active one (the restart that follows starts it). Returns { version } or null. */
+function activateStaged(userData, shellVersion) {
+	const s = stagedPatch(userData, shellVersion);
+	if (!s) return null;
+	writeAtomic(activeFile(userData), JSON.stringify({ version: s.version, shell: s.shell, at: new Date().toISOString() }));
+	try { fs.rmSync(stagedFile(userData), { force: true }); } catch { /* the next start ignores a stale one */ }
+	return { version: s.version };
+}
+
+/** Remove patch folders other than `keep` and a staged one (and unpacking leftovers). Best effort: files in use stay. */
 function cleanOld(userData, keep) {
+	let staged = null;
+	try { staged = JSON.parse(fs.readFileSync(stagedFile(userData), "utf8"))?.version ?? null; } catch { /* none */ }
 	let names = [];
 	try { names = fs.readdirSync(root(userData)); } catch { return; }
 	for (const name of names) {
-		if ((VERSION.test(name) && name !== keep) || name.startsWith("incoming-")) {
+		if ((VERSION.test(name) && name !== keep && name !== staged) || name.startsWith("incoming-")) {
 			try { fs.rmSync(path.join(root(userData), name), { recursive: true, force: true }); } catch { /* in use */ }
 		}
 	}
 }
 
-module.exports = { RELEASE_DOWNLOADS, activePatch, applyPatch, cleanOld, compareVersions, currentVersion, disablePatch, failedVersions, releaseUrl, setPublicKeyForTests, signedText, usablePatch };
+module.exports = { RELEASE_DOWNLOADS, activateStaged, activePatch, applyPatch, cleanOld, stagedPatch, compareVersions, currentVersion, disablePatch, failedVersions, releaseUrl, setPublicKeyForTests, signedText, usablePatch };

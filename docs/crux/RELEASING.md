@@ -18,10 +18,8 @@ There are two kinds of release.
 3. Build the installer (about 15 minutes, Git Bash):
    `npm run build && node scripts/build-server.mjs && node scripts/smoke-server.mjs --electron && npx electron-builder --win --x64 --publish never`
 4. Install it over the current version and check it opens: `MSYS_NO_PATHCONV=1 dist/Crux-Harness-<version>-x64-setup.exe /S`.
-5. Push the `crux` branch, then publish the release with the installer named `Crux-Setup.exe`:
-   `cp dist/Crux-Harness-<version>-x64-setup.exe Crux-Setup.exe`
-   `gh release create v<version> Crux-Setup.exe --repo kkkkenya/crux-desktop --target crux --title "Crux <version>" --notes-file docs/crux/versions/<version>.md`
+5. Push the `crux` branch, then `node scripts/crux-installer-release.mjs --publish`. It signs the installer with the release key, uploads it to the release `v<version>` as `Crux-Setup.exe` (the site's Download), and writes Crux web's `study/web/public/desktop/latest.json` with the signed `installer` entry. It keeps a `patch` for an older shell, so apps on that shell take the patch first and then this installer.
 6. Write the version into `docs/crux/shell-version` and tag the commit `git tag v<version>`, so later updates know which shell they build on.
-7. Tell installed apps: in the Crux web repo, set `version` (and `notes`) in `study/web/public/desktop/latest.json` and push. Each app shows "A new version of Crux is out" on its next start.
+7. Commit and push Crux web. Installed apps (0.7.1 and later) download the installer in the background and show the green Restart bar; it installs silently, with no browser and no Windows prompt.
 
 The site's download button links to `releases/latest/download/Crux-Setup.exe`, so it always gives the newest release.

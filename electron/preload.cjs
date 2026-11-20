@@ -124,6 +124,7 @@ contextBridge.exposeInMainWorld("lh", {
 		updateCheck: () => ipcRenderer.invoke("lh:crux:control", { op: "updateCheck" }),
 		openUpdate: (url) => ipcRenderer.invoke("lh:crux:control", { op: "openUpdate", url }),
 		applyUpdate: () => ipcRenderer.invoke("lh:crux:control", { op: "applyUpdate" }),
+		stageUpdate: () => ipcRenderer.invoke("lh:crux:control", { op: "stageUpdate" }),
 	},
 	// The Hub files desk (electron/hub-desk.cjs): staff put files into the drive dumper's Drop folder. Laptop only.
 	desk: {

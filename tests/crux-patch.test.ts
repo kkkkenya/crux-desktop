@@ -111,4 +111,20 @@ describe("crux-patch", () => {
 		assert.equal(patcher.currentVersion(dir, "0.6.3"), "0.6.5");
 		assert.ok(!fs.existsSync(path.join(dir, "server-patch", "0.6.4")));
 	});
+	it("0.8.0: a patch downloaded in the background waits, survives a start's clean-up, and Restart switches to it", { skip: !zipAvailable }, async () => {
+		const bytes = makeZip();
+		const dir = userData();
+		const done = await patcher.applyPatch(patchFor(bytes), { userData: dir, shellVersion: "0.6.3", fetcher: fake(bytes), activate: false });
+		assert.equal(done.version, "0.6.4");
+		assert.equal(patcher.activePatch(dir, "0.6.3"), null, "not running yet");
+		assert.equal(patcher.currentVersion(dir, "0.6.3"), "0.6.3");
+		assert.deepEqual(patcher.stagedPatch(dir, "0.6.3"), { version: "0.6.4", shell: "0.6.3" });
+		patcher.cleanOld(dir, undefined); // what every start does
+		assert.ok(fs.existsSync(path.join(dir, "server-patch", "0.6.4", "standalone", "server.js")), "the staged folder is kept");
+		assert.equal(patcher.stagedPatch(dir, "0.6.5"), null, "another shell ignores it");
+		assert.deepEqual(patcher.activateStaged(dir, "0.6.3"), { version: "0.6.4" });
+		assert.equal(patcher.currentVersion(dir, "0.6.3"), "0.6.4");
+		assert.equal(patcher.stagedPatch(dir, "0.6.3"), null, "used up");
+		assert.equal(patcher.activateStaged(dir, "0.6.3"), null);
+	});
 });
