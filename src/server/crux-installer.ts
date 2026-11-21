@@ -5,7 +5,7 @@
  * again and runs it silently (/S --force-run): it closes Crux Harness, installs over it with no clicks, and opens the
  * new version. Nothing here opens a browser.
  */
-import { spawn } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -78,7 +78,7 @@ export function stageInstaller(current: string, deps: Deps = {}): InstallerState
 export const stageSettled = (): Promise<void> => running ?? Promise.resolve();
 
 /** Run the staged installer silently. It closes this app, installs, and opens the new version. */
-export function installStaged(version: string, run: typeof spawn = spawn): { ok: true } | { ok: false; error: string } {
+export function installStaged(version: string, run: typeof spawnSync = spawnSync): { ok: true } | { ok: false; error: string } {
 	if (!staged || state.status !== "ready" || staged.version !== version) return { ok: false, error: "The update isn't ready yet." };
 	try {
 		if (fs.statSync(staged.file).size !== staged.size || hashOf(staged.file) !== staged.sha256) {
@@ -89,8 +89,9 @@ export function installStaged(version: string, run: typeof spawn = spawn): { ok:
 		}
 		// Windows starts it through WMI, outside Crux Harness's own process group: the installer closes Crux Harness
 		// first, and a child of Crux Harness would be closed with it (seen on 2026-11-21: the app closed, nothing installed).
-		const child = run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", wmiStart(staged.file)], { detached: true, stdio: "ignore", windowsHide: true });
-		child.unref();
+		// Waited for (a few seconds), not detached: a detached PowerShell had no console and quietly did nothing (0.7.4).
+		const done = run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", wmiStart(staged.file)], { encoding: "utf8", windowsHide: true, timeout: 60000 });
+		if (!/^rv=0\b/m.test(String(done.stdout ?? ""))) return { ok: false, error: "The update couldn't start. Try again." };
 		return { ok: true };
 	} catch {
 		return { ok: false, error: "The update couldn't start. Try again." };
@@ -100,7 +101,7 @@ export function installStaged(version: string, run: typeof spawn = spawn): { ok:
 /** The PowerShell line that has Windows (WMI) start the installer silently, as its own process. Pure, for tests. */
 export function wmiStart(file: string): string {
 	if (!/^[A-Za-z]:\\[^'"`$]+\.exe$/.test(file)) throw new Error("not an installer path");
-	return `Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = '"${file}" /S --force-run' } | Out-Null`;
+	return `Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = '"${file}" /S --force-run' } | ForEach-Object { "rv=" + $_.ReturnValue }`;
 }
 
 /** Test seam. */

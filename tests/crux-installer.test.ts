@@ -52,12 +52,13 @@ it("stage: downloads in the background, checks it, and says ready; install runs 
 	const file = path.join(dir, "updates", "Crux-Harness-0.8.0-setup.exe");
 	assert.equal(fs.readFileSync(file).toString(), exe.toString());
 	const calls: unknown[][] = [];
-	const run = ((cmd: string, args: string[], opts: unknown) => { calls.push([cmd, args, opts]); return { unref() {} }; }) as never;
+	const run = ((cmd: string, args: string[], opts: unknown) => { calls.push([cmd, args, opts]); return { status: 0, stdout: "rv=0\r\n" }; }) as never;
 	assert.deepEqual(installStaged("0.9.9", run), { ok: false, error: "The update isn't ready yet." });
 	assert.deepEqual(installStaged("0.8.0", run), { ok: true });
 	assert.equal(calls[0]![0], "powershell.exe", "Windows starts it, outside the app's process group");
 	assert.match((calls[0]![1] as string[]).at(-1)!, /Win32_Process -MethodName Create .*Crux-Harness-0\.8\.0-setup\.exe" \/S --force-run/);
-	assert.equal((calls[0]![2] as { detached: boolean }).detached, true);
+	assert.equal((calls[0]![2] as { detached?: boolean }).detached, undefined, "waited for: a detached PowerShell did nothing");
+	assert.deepEqual(installStaged("0.8.0", (() => ({ status: 0, stdout: "rv=9" })) as never), { ok: false, error: "The update couldn't start. Try again." }, "WMI said no");
 });
 
 it("wmiStart: only a plain installer path, no quotes or variables", async () => {
@@ -75,7 +76,7 @@ it("a download that doesn't match the release is refused; a changed file is neve
 	await stageSettled();
 	fs.writeFileSync(path.join(dir, "updates", "Crux-Harness-0.8.0-setup.exe"), "MZ tampered after download");
 	let ran = false;
-	assert.equal(installStaged("0.8.0", (() => { ran = true; return { unref() {} }; }) as never).ok, false);
+	assert.equal(installStaged("0.8.0", (() => { ran = true; return { status: 0, stdout: "rv=0" }; }) as never).ok, false);
 	assert.equal(ran, false);
 });
 
