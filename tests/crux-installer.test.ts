@@ -78,3 +78,14 @@ it("a download that doesn't match the release is refused; a changed file is neve
 	assert.equal(installStaged("0.8.0", (() => { ran = true; return { unref() {} }; }) as never).ok, false);
 	assert.equal(ran, false);
 });
+
+it("the install request is taken from the app's own page, whatever host the server thinks it has (0.7.1–0.7.3 refused it)", async () => {
+	const { sameApp } = await import("../app/api/crux-update/route.ts");
+	const h = (o: Record<string, string>) => new Headers(o);
+	assert.equal(sameApp(h({ origin: "http://127.0.0.1:57340", host: "127.0.0.1:57340", "sec-fetch-site": "same-origin" })), true);
+	assert.equal(sameApp(h({ origin: "http://127.0.0.1:57340", host: "127.0.0.1:57340" })), true);
+	assert.equal(sameApp(h({ "sec-fetch-site": "same-origin" })), true);
+	assert.equal(sameApp(h({ origin: "https://evil.example", host: "127.0.0.1:57340", "sec-fetch-site": "cross-site" })), false);
+	assert.equal(sameApp(h({ origin: "https://evil.example", host: "127.0.0.1:57340" })), false);
+	assert.equal(sameApp(h({})), false);
+});

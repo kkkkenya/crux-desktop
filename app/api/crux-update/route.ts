@@ -15,9 +15,18 @@ export function GET(request: Request) {
 	return Response.json(stageInstaller(current), { headers: HEADERS });
 }
 
+/** From this app's own page: the browser says same-origin, or the Origin's host is the Host asked for. (request.url's
+ *  host is not the window's: comparing with it refused every install in 0.7.1 to 0.7.3.) */
+export function sameApp(headers: Headers): boolean {
+	const site = headers.get("sec-fetch-site");
+	if (site && site !== "same-origin") return false;
+	const origin = headers.get("origin");
+	if (!origin) return site === "same-origin";
+	try { return new URL(origin).host === headers.get("host"); } catch { return false; }
+}
+
 export async function POST(request: Request) {
-	const origin = new URL(request.url).origin;
-	if (request.headers.get("origin") !== origin || request.headers.get("sec-fetch-site") === "cross-site") {
+	if (!sameApp(request.headers)) {
 		return Response.json({ ok: false, error: "Not allowed." }, { status: 403, headers: HEADERS });
 	}
 	const body = await request.json().catch(() => null) as { version?: unknown } | null;
