@@ -55,9 +55,15 @@ it("stage: downloads in the background, checks it, and says ready; install runs 
 	const run = ((cmd: string, args: string[], opts: unknown) => { calls.push([cmd, args, opts]); return { unref() {} }; }) as never;
 	assert.deepEqual(installStaged("0.9.9", run), { ok: false, error: "The update isn't ready yet." });
 	assert.deepEqual(installStaged("0.8.0", run), { ok: true });
-	assert.equal(calls[0]![0], file);
-	assert.deepEqual(calls[0]![1], ["/S", "--force-run"]);
+	assert.equal(calls[0]![0], "powershell.exe", "Windows starts it, outside the app's process group");
+	assert.match((calls[0]![1] as string[]).at(-1)!, /Win32_Process -MethodName Create .*Crux-Harness-0\.8\.0-setup\.exe" \/S --force-run/);
 	assert.equal((calls[0]![2] as { detached: boolean }).detached, true);
+});
+
+it("wmiStart: only a plain installer path, no quotes or variables", async () => {
+	const { wmiStart } = await import("../src/server/crux-installer.ts");
+	assert.match(wmiStart("C:\\Users\\a\\AppData\\Roaming\\Crux\\data\\updates\\Crux-Harness-0.8.0-setup.exe"), /CommandLine = '"C:.*setup\.exe" \/S --force-run'/);
+	for (const bad of ["C:\\x\\a'b.exe", "C:\\x\\$env.exe", "relative.exe", "C:\\x\\a.bat"]) assert.throws(() => wmiStart(bad));
 });
 
 it("a download that doesn't match the release is refused; a changed file is never run", async () => {

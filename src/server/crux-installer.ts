@@ -87,12 +87,20 @@ export function installStaged(version: string, run: typeof spawn = spawn): { ok:
 			staged = null;
 			return { ok: false, error: "The update file changed. It will be downloaded again." };
 		}
-		const child = run(staged.file, ["/S", "--force-run"], { detached: true, stdio: "ignore", windowsHide: true });
+		// Windows starts it through WMI, outside Crux Harness's own process group: the installer closes Crux Harness
+		// first, and a child of Crux Harness would be closed with it (seen on 2026-11-21: the app closed, nothing installed).
+		const child = run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", wmiStart(staged.file)], { detached: true, stdio: "ignore", windowsHide: true });
 		child.unref();
 		return { ok: true };
 	} catch {
 		return { ok: false, error: "The update couldn't start. Try again." };
 	}
+}
+
+/** The PowerShell line that has Windows (WMI) start the installer silently, as its own process. Pure, for tests. */
+export function wmiStart(file: string): string {
+	if (!/^[A-Za-z]:\\[^'"`$]+\.exe$/.test(file)) throw new Error("not an installer path");
+	return `Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = '"${file}" /S --force-run' } | Out-Null`;
 }
 
 /** Test seam. */
