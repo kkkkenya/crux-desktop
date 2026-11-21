@@ -16,6 +16,7 @@ const ORIGIN = (process.env.CRUX_ORIGIN || "https://crux.engineeringhub.site").r
 
 export type InstallerState =
 	| { status: "none" }
+	| { status: "checking" }
 	| { status: "downloading"; version: string }
 	| { status: "ready"; version: string }
 	| { status: "failed"; version?: string; error: string };
@@ -36,6 +37,9 @@ interface Deps { fetcher?: typeof fetch; publicKey?: string; origin?: string }
 export function stageInstaller(current: string, deps: Deps = {}): InstallerState {
 	if (process.platform !== "win32" && !deps.fetcher) return state; // the silent installer is Windows only
 	if (running || state.status === "ready") return state;
+	// Say "checking" at once: the window keeps asking until it hears ready or none (0.7.1 heard "none" here and
+	// stopped, so the bar waited for the six-hour check).
+	state = { status: "checking" };
 	running = (async () => {
 		const fetcher = deps.fetcher ?? fetch;
 		let latest: unknown;

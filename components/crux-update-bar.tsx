@@ -43,7 +43,7 @@ export function CruxUpdates() {
 		const poll = async () => {
 			const r = await fetch(`/api/crux-update?current=${encodeURIComponent(current)}`, { cache: "no-store" }).then((x) => x.json()).catch(() => null) as { status?: string; version?: string } | null;
 			if (r?.status === "ready" && r.version) setBar({ kind: "installer", version: r.version, phase: "ready" });
-			else if (r?.status === "downloading") waiting.current = setTimeout(() => void poll(), WAIT_MS);
+			else if (r?.status === "downloading" || r?.status === "checking") waiting.current = setTimeout(() => void poll(), r.status === "checking" ? 3000 : WAIT_MS);
 		};
 		void poll();
 	}, []);

@@ -46,7 +46,7 @@ it("usableInstaller: only a signed, newer installer from our releases", () => {
 });
 
 it("stage: downloads in the background, checks it, and says ready; install runs it silently", async () => {
-	assert.equal(stageInstaller("0.7.1", { fetcher: fakeFetch({ installer: signed() }), publicKey: PUB, origin: "https://crux.test" }).status, "none");
+	assert.equal(stageInstaller("0.7.1", { fetcher: fakeFetch({ installer: signed() }), publicKey: PUB, origin: "https://crux.test" }).status, "checking", "never 'none' while it is still looking");
 	await stageSettled();
 	assert.deepEqual(installerState(), { status: "ready", version: "0.8.0" });
 	const file = path.join(dir, "updates", "Crux-Harness-0.8.0-setup.exe");

@@ -6,6 +6,8 @@
  *   node scripts/crux-patch-release.mjs --publish  also uploads the zip to the GitHub release v<version>
  *                                                  (created if missing) and writes Crux web's latest.json
  *   --no-build                                     zip the server already in .next/standalone
+ *   --for-shell 0.7.0 --version 0.7.2              an update for apps still on an older shell (they take it, then the
+ *                                                  newer installer in the background); latest.json keeps its version
  *
  * Use it when electron/ is unchanged since the installed version (the "shell"). If electron/ changed, build the
  * full installer instead (docs/crux/RELEASING.md): the script refuses then.
@@ -19,9 +21,11 @@ import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "..");
 const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
-const version = pkg.version;
+const arg = (k) => (process.argv.includes(k) ? process.argv[process.argv.indexOf(k) + 1] : null);
+const olderShell = arg("--for-shell");
+const version = (olderShell && arg("--version")) || pkg.version;
 const shellFile = path.join(root, "docs", "crux", "shell-version");
-const shell = fs.readFileSync(shellFile, "utf8").trim();
+const shell = olderShell || fs.readFileSync(shellFile, "utf8").trim();
 const fail = (msg) => { console.error(`crux-patch-release: ${msg}`); process.exit(1); };
 const publish = process.argv.includes("--publish");
 
@@ -29,9 +33,9 @@ if (!/^\d+\.\d+\.\d+$/.test(version) || !/^\d+\.\d+\.\d+$/.test(shell)) fail(`ba
 if (version === shell) fail(`package.json is still ${version}, the installer's version. Raise it first (for example to the next patch number).`);
 
 // The shell is what the installer packaged: electron/ must not have changed since the tag v<shell>.
-const changed = spawnSync("git", ["diff", "--name-only", `v${shell}`, "--", "electron", "electron-builder.yml", "build"], { cwd: root, encoding: "utf8" });
+const changed = olderShell ? { status: 0, stdout: "" } : spawnSync("git", ["diff", "--name-only", `v${shell}`, "--", "electron", "electron-builder.yml", "build"], { cwd: root, encoding: "utf8" });
 if (changed.status !== 0) fail(`no git tag v${shell} to compare the shell with. Tag the installer's commit: git tag v${shell} <commit>`);
-const untracked = spawnSync("git", ["ls-files", "--others", "--exclude-standard", "--", "electron", "build"], { cwd: root, encoding: "utf8" }).stdout.trim();
+const untracked = olderShell ? "" : spawnSync("git", ["ls-files", "--others", "--exclude-standard", "--", "electron", "build"], { cwd: root, encoding: "utf8" }).stdout.trim();
 if (changed.stdout.trim() || untracked) fail(`the window shell changed since ${shell}; release a full installer instead:\n${changed.stdout}${untracked}`);
 // The release key signs every update; the app checks it with the public key in electron/crux-patch.cjs.
 const keyFile = process.env.CRUX_PATCH_KEY || path.join(os.homedir(), ".crux-desktop", "patch-signing.pem");
@@ -80,5 +84,7 @@ const web = process.env.CRUX_WEB_DIR || path.resolve(root, "..", "discord-sync-b
 const latestFile = path.join(web, "study", "web", "public", "desktop", "latest.json");
 const latest = JSON.parse(fs.readFileSync(latestFile, "utf8"));
 const firstLine = fs.readFileSync(notesFile, "utf8").split(/\r?\n/).find((l) => l.startsWith("- **"))?.replace(/^- \*\*(.+?)\*\*.*$/, "$1") ?? "";
-fs.writeFileSync(latestFile, `${JSON.stringify({ ...latest, version, notes: firstLine || latest.notes, released: new Date().toISOString().slice(0, 10), patch }, null, 2)}\n`);
+// An update for an older shell leaves the newest version (and its installer) as they are.
+const top = olderShell ? {} : { version, notes: firstLine || latest.notes, released: new Date().toISOString().slice(0, 10) };
+fs.writeFileSync(latestFile, `${JSON.stringify({ ...latest, ...top, patch }, null, 2)}\n`);
 console.log(`crux-patch-release: wrote ${latestFile}. Commit and push Crux web so installed apps see it.`);
