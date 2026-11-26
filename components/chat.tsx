@@ -94,6 +94,7 @@ import {
 	teachPauseLive,
 } from "@/src/core";
 import { ReadingThinkingField } from "@/components/reading-thinking";
+import { autoTitleFromMessage } from "@/lib/session-title";
 import { currentUserThinkingOpen, setAllUserThinkingOpen } from "@/components/thinking-block";
 
 /** One width for everything: transcript, cards, and the bottom blob share this column. */
@@ -588,7 +589,7 @@ export function Chat({
 	const catalogRef = useRef(catalog);
 	catalogRef.current = catalog;
 	const [selectedModel, setSelectedModel] = useState<string | undefined>();
-	// Crux hosted models (Track H3): "DeepSeek Flash is busy, so Gemini 3.8 Flash answered.", once per chat.
+	// Crux hosted models (Track H3): "DeepSeek Flash is busy, so Gemini 4 Hydrogen answered.", once per chat.
 	const [cruxNote, setCruxNote] = useState<string | null>(null);
 	const cruxNotesSaid = useRef(new Set<string>());
 	useServerEvent("crux-note", (p) => {
@@ -1269,9 +1270,20 @@ export function Chat({
 			deliverOpeningPrompt(t);
 			return;
 		}
+		applyAutoTitle(t); // a session started without a name takes its first message's words
 		draftRef.current = t; // the refusal flow's preserve-and-replay seam
 		applyText("");
 		void send({ type: "text", text: t });
+	};
+	/* Untitled sessions (started with documents only, no typed opening) get a
+	 * title from the first message sent. Same rename route as the header. */
+	const applyAutoTitle = (text: string) => {
+		const next = autoTitleFromMessage(text, titleText);
+		if (!next) return;
+		setTitleText(next);
+		void fetch(`/api/chats/${chatId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: next }) })
+			.then((res) => { if (res.ok) window.dispatchEvent(new CustomEvent("lh:chat-renamed", { detail: { id: chatId, title: next } })); })
+			.catch(() => { /* keep the untitled name; the next send retries */ });
 	};
 
 	/* STEER VS SEND (owner arc 2026-10-03): a send while a turn runs steers

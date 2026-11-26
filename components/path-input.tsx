@@ -4,6 +4,7 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { FilePathChip } from "./file-path-chip";
 import { cn } from "../lib/utils";
+import { announceFileProblems, pastedFilePaths } from "../lib/paste-files";
 import {
 	adjacentPathRange, atomicPathRange, clampPathSelection, insertFilePaths,
 	normalizePathEdit, normalizePathInputValue, pathInputStaticRange, PathInputHistory, readPathInput, readPathSelection, renderPathInput,
@@ -189,7 +190,17 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 			event.preventDefault();
 			const text = event.clipboardData?.getData("text/plain") ?? "";
 			// Image/file/HTML-only clipboard contents are not text replacement.
-			if (text === "") return;
+			if (text === "") {
+				// A pasted file or screenshot becomes chips, like the attach button's.
+				const files = Array.from(event.clipboardData?.files ?? []);
+				if (files.length > 0) {
+					void pastedFilePaths(files, window.lh).then(({ paths, problems }) => {
+						if (paths.length > 0) root.dispatchEvent(new CustomEvent(INSERT_FILE_PATHS_EVENT, { detail: paths }));
+						announceFileProblems(problems);
+					});
+				}
+				return;
+			}
 			if (composing.current) pendingPaste.push(text);
 			else replace(text);
 		}

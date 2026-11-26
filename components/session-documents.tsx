@@ -13,11 +13,17 @@
  * The files ride the CREATE request (start-session.ts builds the multipart
  * body); nothing is read in the browser.
  */
-import { useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { FileTextIcon, LibraryIcon, XIcon } from "lucide-react";
 import { HubDialog } from "@/components/crux-hub";
 import { Hint } from "@/components/ui/hint";
+import { IMPORT_EXTENSIONS } from "@/lib/notes-import-limits";
+import { checkChosenFiles, describeChosenFiles, sortFiles } from "@/lib/file-list";
 import type { SourceDocumentRef } from "@/src/core";
+
+/** The file types a source can be made from; the picker's accept list and the rejection text both come from here. */
+const SOURCE_TYPES_LABEL = ".md, .txt or .pdf";
+const SOURCE_SORT_KEY = "crux:source-docs-sort";
 
 /** The creation-stage chip: a chosen file, removable until the session exists. */
 export function ChosenDocumentChip({ name, onRemove }: { name: string; onRemove?: () => void }) {
@@ -52,18 +58,31 @@ export function SourceDocumentsPicker({ documents, onFiles }: {
 	const inputRef = useRef<HTMLInputElement>(null);
 	// Crux: notes and past papers from the Study Hub, attached to the first message like the paperclip does.
 	const [hub, setHub] = useState(false);
+	// Says what happened to the last pick: added, already chosen, or the wrong type (and why).
+	const [message, setMessage] = useState("");
+	// The sort choice is remembered between visits (a per-computer preference).
+	const [order, setOrder] = useState<"name" | "recent">("name");
+	useEffect(() => {
+		try { if (localStorage.getItem(SOURCE_SORT_KEY) === "recent") setOrder("recent"); }
+		catch { /* storage blocked: name order */ }
+	}, []);
+	const chooseOrder = (next: "name" | "recent") => {
+		setOrder(next);
+		try { localStorage.setItem(SOURCE_SORT_KEY, next); } catch { /* storage blocked */ }
+	};
 	const bridge = typeof window === "undefined" ? undefined : window.lh?.crux;
 	const onChange = (event: ChangeEvent<HTMLInputElement>) => {
 		const picked = Array.from(event.target.files ?? []);
 		// Same-name files are one source (the identity rule); a re-pick of an
-		// already-chosen name replaces nothing — the first stays.
-		const names = new Set(documents.map((f) => f.name));
-		onFiles([...documents, ...picked.filter((f) => !names.has(f.name))]);
+		// already-chosen name replaces nothing — the first stays, and says so.
+		const check = checkChosenFiles(documents, picked, IMPORT_EXTENSIONS, SOURCE_TYPES_LABEL);
+		onFiles([...documents, ...check.accepted]);
+		setMessage(describeChosenFiles(check));
 		event.target.value = "";
 	};
 	return (
 		<div data-testid="source-documents-picker" className="flex flex-wrap items-center gap-1.5">
-			<input ref={inputRef} type="file" multiple accept=".md,.markdown,.txt,.pdf" className="hidden" onChange={onChange} />
+			<input ref={inputRef} type="file" multiple accept=".md,.markdown,.txt,.pdf" className="hidden" onChange={onChange} data-testid="source-documents-input" />
 			<Hint label="Teach from your own notes or past papers on this computer" side="bottom">
 				<button
 					type="button"
@@ -94,9 +113,21 @@ export function SourceDocumentsPicker({ documents, onFiles }: {
 				</Hint>
 			)}
 			{hub && <HubDialog bridge={bridge} onClose={() => setHub(false)} />}
-			{documents.map((file) => (
-				<ChosenDocumentChip key={file.name} name={file.name} onRemove={() => onFiles(documents.filter((f) => f !== file))} />
+			{documents.length > 1 && (
+				<label className="flex items-center gap-1.5 font-ui text-xs text-muted-foreground">
+					Sort
+					<select value={order} onChange={(event) => chooseOrder(event.target.value === "recent" ? "recent" : "name")} aria-label="Sort documents"
+						data-testid="source-documents-sort" className="cursor-pointer rounded-md border border-border bg-card px-1.5 py-0.5 text-xs text-foreground">
+						<option value="name">Name</option>
+						<option value="recent">Recently added</option>
+					</select>
+				</label>
+			)}
+			{/* Name order keeps a long list of chapters readable; "recent" is the pick order, newest first. */}
+			{(order === "recent" ? [...documents].reverse() : sortFiles(documents, "name")).map((file) => (
+				<ChosenDocumentChip key={file.name} name={file.name} onRemove={() => { onFiles(documents.filter((f) => f !== file)); setMessage(""); }} />
 			))}
+			{message && <p role="status" data-testid="source-documents-message" className="w-full text-xs text-muted-foreground">{message}</p>}
 		</div>
 	);
 }

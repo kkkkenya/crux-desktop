@@ -15,6 +15,7 @@ import { INSERT_FILE_PATHS_EVENT } from "@/components/path-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { FILE_SORT_LABELS, parseSortMode, sortFiles, type FileSortMode } from "@/lib/file-list";
 import { ShareWithClass, TopContributors } from "@/components/crux-study";
 import { CruxJoinHelp } from "@/components/crux-join";
 
@@ -95,6 +96,7 @@ export interface CruxGuide {
 export interface CruxLearn { guide: CruxGuide | null; read: CruxRef[]; examples: CruxRef[]; books: { id: string; name: string }[] }
 
 const LAST_UNIT = "crux:hub-unit";
+const HUB_SORT = "crux:hub-sort"; // the order the student chose for file lists, remembered
 const TIER_LABEL: Record<string, string> = { owner: "Owner", vvip: "Acrux", premium: "Mimosa", basic: "Gacrux", trial: "Imai" };
 
 /** When today's limit resets, in Nairobi time (the Hub's day). */
@@ -162,11 +164,22 @@ export function HubDialog({ bridge, onClose }: { bridge: CruxBridge | undefined;
 	const [message, setMessage] = useState<string>("");
 	const [picked, setPicked] = useState<ReadonlySet<string>>(new Set()); // file ids ticked for "Add to session"
 	const [adding, setAdding] = useState(false);
+	const [sort, setSort] = useState<FileSortMode>("name");
 
 	useEffect(() => {
 		const dialog = dialogRef.current;
 		if (dialog && !dialog.open) dialog.showModal();
 	}, []);
+
+	useEffect(() => {
+		// Hub files carry no dates, so a stored "recent" falls back to name.
+		try { const mode = parseSortMode(localStorage.getItem(HUB_SORT)); setSort(mode === "recent" ? "name" : mode); }
+		catch { /* storage blocked: name order */ }
+	}, []);
+	const chooseSort = (mode: FileSortMode) => {
+		setSort(mode);
+		try { localStorage.setItem(HUB_SORT, mode); } catch { /* storage blocked */ }
+	};
 
 	const fail = useCallback((reply: { code: string; error: string; resetsAt?: string | null }) => {
 		if (reply.code === "signed-out" || reply.code === "no-access") { setStatus({ signedIn: false, problem: reply.code === "no-access" ? reply.error : undefined }); setUnits(null); setFiles(null); }
@@ -270,8 +283,12 @@ export function HubDialog({ bridge, onClose }: { bridge: CruxBridge | undefined;
 
 	const matches = useMemo(() => matchUnits(units?.all ?? [], query), [units, query]);
 	const unitTitle = useMemo(() => [...(units?.mine ?? []), ...(units?.all ?? [])].find((u) => u.code === unit)?.title ?? "", [units, unit]);
-	const papers = files?.filter((f) => f.paper) ?? [];
-	const notes = files?.filter((f) => !f.paper) ?? [];
+	// Papers and notes stay in their own groups; the sort orders each group.
+	const papers = sortFiles(files?.filter((f) => f.paper) ?? [], sort);
+	const notes = sortFiles(files?.filter((f) => !f.paper) ?? [], sort);
+	const shownIds = [...papers, ...notes].map((f) => f.id);
+	const allPicked = shownIds.length > 0 && shownIds.every((id) => picked.has(id));
+	const toggleAll = () => setPicked(allPicked ? new Set() : new Set(shownIds));
 
 	return (
 		<dialog
@@ -371,6 +388,19 @@ export function HubDialog({ bridge, onClose }: { bridge: CruxBridge | undefined;
 										<p className="mt-3 text-sm text-muted-foreground" data-testid="hub-empty">The Hub has no files for this unit yet.</p>
 									) : (
 										<>
+											<div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+												<label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+													<input type="checkbox" className="size-4 cursor-pointer accent-primary" checked={allPicked} onChange={toggleAll} aria-label="Select all files" data-testid="hub-select-all" />
+													Select all
+												</label>
+												<label className="flex items-center gap-2 text-xs text-muted-foreground">
+													Sort
+													<select value={sort} onChange={(event) => chooseSort(parseSortMode(event.target.value))} aria-label="Sort files"
+														data-testid="hub-sort" className="cursor-pointer rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground">
+														{(["name", "kind", "saved"] as const).map((mode) => <option key={mode} value={mode}>{FILE_SORT_LABELS[mode]}</option>)}
+													</select>
+												</label>
+											</div>
 											{[["Past papers", papers], ["Notes and slides", notes]].map(([label, group]) => (group as CruxFile[]).length > 0 && (
 												<div key={label as string} className="mt-4">
 													<p className="mb-1 text-xs uppercase tracking-widest text-muted-foreground">{label as string}</p>

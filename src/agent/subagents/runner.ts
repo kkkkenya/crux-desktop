@@ -29,6 +29,8 @@ import { ROLE_SLOT, modelsNotConfigured, type ModelSlotName, type ProviderKeyMis
 import type { ChatStore, JobStore } from "../../core/ports.ts";
 import { runDemoBuilder } from "./demo-builder.ts";
 import { runPdfReaderAgent } from "./pdf-reader.ts";
+import { pdfImageFallback } from "../pdf-fallback.ts";
+import { figureNeedsPicturesNotice } from "../pdf-disclaimer.ts";
 import { runResearcherAgent } from "./researcher.ts";
 import { runVisualMaker } from "./visual-maker.ts";
 import { loadLearnerImage, type LearnerImage } from "../tools/learner-image.ts";
@@ -447,6 +449,18 @@ export function createJobRunner(deps: JobRunnerDeps): JobRunner {
 		const pdfInput = input?.pdf && typeof input.pdf.path === "string" && typeof input.pdf.page === "number" ? input.pdf : undefined;
 
 		try {
+			// Pictures need an image-capable model: a text-only one gets the plan's image model, else one plain sentence.
+			let makerEngine = model;
+			if ((pdfInput || imagePath) && model && !model.model.input.includes("image")) {
+				const fallback = pdfImageFallback();
+				if (!fallback) {
+					const notice = figureNeedsPicturesNotice(model.model.name || model.model.id);
+					if (stillRunning(jobId)) jobStore.updateJob(jobId, { error: notice });
+					await finishJob(jobId, { svg: "", notes: notice });
+					return;
+				}
+				makerEngine = fallback;
+			}
 			// Annotation (issue #363): the learner image is read once, here,
 			// and rides into the maker bounded for storage.
 			let image: LearnerImage | undefined;
@@ -465,7 +479,7 @@ export function createJobRunner(deps: JobRunnerDeps): JobRunner {
 			const result = await runVisualMaker(
 				{ brief, image, pdf },
 				{
-					engine: model,
+					engine: makerEngine,
 					abortSignal: loop.abortSignal,
 					chatId: loop.chatId,
 					onUsage: (usage) => loop.onUsage(piUsageToStep(usage)),
@@ -511,6 +525,7 @@ export function createJobRunner(deps: JobRunnerDeps): JobRunner {
 				chatId: loop.chatId,
 				onUsage: (usage) => loop.onUsage(piUsageToStep(usage)),
 				onActivity: (line) => jobStore.updateJob(jobId, { activity: line }),
+				imageFallback: pdfImageFallback,
 			},
 			);
 			if (isPdfFailure(result) && stillRunning(jobId))

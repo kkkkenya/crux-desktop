@@ -106,6 +106,21 @@ function pdfLib(): Promise<Pdf> {
 	});
 	return pdfjs;
 }
+/** A plain sentence for a PDF the viewer cannot open (pdf.js names its errors in English). */
+function openProblem(err: Error | undefined): string {
+	const name = err?.name ?? "";
+	const message = (err?.message ?? "").toLowerCase();
+	if (name === "PasswordException" || message.includes("password")) {
+		return "This PDF is password-protected, so Crux can't open it. Remove the password in your PDF app, then open it again.";
+	}
+	if (name === "InvalidPDFException" || message.includes("invalid pdf")) {
+		return "This file is damaged or is not a PDF, so it can't be shown. Download or export it again.";
+	}
+	if (name === "MissingPDFException" || message.includes("missing pdf")) {
+		return "This file could not be found. It may have been moved or deleted.";
+	}
+	return "This file could not be opened. Try again, or open it in your PDF app.";
+}
 const docs = new Map<string, Promise<Loaded>>();
 export function loadDoc(bridge: CruxBridge, path: string): Promise<Loaded> {
 	let p = docs.get(path);
@@ -152,6 +167,7 @@ function Page({ doc, n, width, ratio, onSeen, hit }: { doc: PdfDoc; n: number; w
 	const canvas = useRef<HTMLCanvasElement>(null);
 	const text = useRef<HTMLDivElement>(null);
 	const [near, setNear] = useState(false);
+	const [failed, setFailed] = useState(false);
 	useEffect(() => {
 		const el = box.current;
 		if (!el) return;
@@ -179,13 +195,13 @@ function Page({ doc, n, width, ratio, onSeen, hit }: { doc: PdfDoc; n: number; w
 			const vp = p.getViewport({ scale: scale * dpr });
 			c.width = vp.width; c.height = vp.height;
 			task = p.render({ canvas: c, canvasContext: c.getContext("2d")!, viewport: vp });
-			task.promise.catch(() => {});
+			task.promise.catch((e: { name?: string }) => { if (!gone && e?.name !== "RenderingCancelledException") setFailed(true); });
 			t.replaceChildren();
 			t.style.setProperty("--scale-factor", String(scale));
 			t.style.setProperty("--total-scale-factor", String(scale));
 			layer = new lib.TextLayer({ textContentSource: p.streamTextContent(), container: t, viewport: p.getViewport({ scale }) });
 			layer.render().then(() => t.dispatchEvent(new Event("drawn"))).catch(() => {});
-		});
+		}).catch(() => { if (!gone) setFailed(true); });
 		return () => {
 			gone = true; task?.cancel(); layer?.cancel();
 			const c = canvas.current;
@@ -205,6 +221,7 @@ function Page({ doc, n, width, ratio, onSeen, hit }: { doc: PdfDoc; n: number; w
 		<div ref={box} className="crux-pdf-page" data-page={n} style={{ width, height: width * own }}>
 			<canvas ref={canvas} aria-label={`Page ${n}`} />
 			<div ref={text} className="textLayer" />
+			{failed && <p role="alert" className="crux-pdf-note">This page could not be drawn.</p>}
 		</div>
 	);
 }
@@ -290,7 +307,7 @@ function Reader({ bridge, tab }: { bridge: CruxBridge; tab: ReaderTab }) {
 	useEffect(() => {
 		let gone = false;
 		setDoc(null); setProblem("");
-		loadDoc(bridge, tab.path).then((d) => { if (!gone) setDoc(d); }).catch((err: Error) => { if (!gone) setProblem(err.message || "The file could not be opened."); });
+		loadDoc(bridge, tab.path).then((d) => { if (!gone) setDoc(d); }).catch((err: Error) => { if (!gone) setProblem(openProblem(err)); });
 		return () => { gone = true; };
 	}, [bridge, tab.path]);
 	if (problem) return <div className="crux-pdf-scroll"><p role="alert" className="crux-pdf-note">{problem}</p></div>;
@@ -336,7 +353,7 @@ function Mini({ bridge, tabs, tab }: { bridge: CruxBridge; tabs: ReaderTab[]; ta
 			c.width = vp.width; c.height = vp.height;
 			task = p.render({ canvas: c, canvasContext: c.getContext("2d")!, viewport: vp });
 			await task.promise.catch(() => {});
-		}).catch((err: Error) => { if (!gone) setProblem(err.message || "The file could not be opened."); });
+		}).catch((err: Error) => { if (!gone) setProblem(openProblem(err)); });
 		return () => { gone = true; task?.cancel(); };
 	}, [bridge, tab.path, page]);
 	const go = (n: number) => { if (!info || n < 1 || n > info.pages) return; setTurn(n > page ? "next" : "prev"); setPage(tab.path, n); };

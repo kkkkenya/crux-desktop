@@ -35,6 +35,11 @@ import { failedOutputCallIds, type LhMessage } from "../../core/native-messages.
 import { prepareAuditorReview } from "../tools/graph.ts";
 import { runSubmitAgent, healStringifiedArrays } from "./submit-agent.ts";
 import { transcribeImage, transcribePdf, visionPages, type TranscribeOptions } from "./notes-transcriber.ts";
+import { pdfImageFallback } from "../pdf-fallback.ts";
+import { pictureReadPlan } from "../pdf-disclaimer.ts";
+
+/** An import's result: the stats, plus one plain note when pictures were not read. */
+export type NotesImportStats = EmissionStats & { notice?: string };
 import { joinPages, type PdfPage } from "./pdf-markdown.ts";
 import type { SupportedImageMimeType } from "../image-processing/index.ts";
 
@@ -792,7 +797,7 @@ export interface ExtractionPipeline {
 	 *  over ONE raw notes file. The source id is deterministic per file
 	 *  path, so re-importing the same file re-runs extraction against the
 	 *  same source identity (mappings dedupe by it). */
-	importNotes(input: NotesImportInput): Promise<EmissionStats>;
+	importNotes(input: NotesImportInput): Promise<NotesImportStats>;
 }
 
 /** pi's per-step usage, flattened to the persisted CallUsage fields
@@ -1427,15 +1432,22 @@ export function createExtractionPipeline(deps: ExtractionPipelineDeps): Extracti
 	 *  their text needs no vision — the converter's Markdown goes straight
 	 *  on, no vision stage required. Otherwise one registry row in the
 	 *  "transcribing" phase, abortable source-wide like the chunk jobs. */
-	async function transcribeSource(id: string, input: Exclude<NotesImportInput, { text: string }>): Promise<string> {
+	async function transcribeSource(id: string, input: Exclude<NotesImportInput, { text: string }>): Promise<{ text: string; notice?: string }> {
 		if ("image" in input) return runTranscription(id, input.filePath, (opts) => transcribeImage(input.image, input.mimeType, opts));
 		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "lh-import-"));
 		try {
 			const pdfPath = path.join(dir, "import.pdf");
 			await fs.writeFile(pdfPath, input.pdf);
 			const needed = await visionPages(pdfPath, input.pages);
-			if (needed.length === 0) return joinPages(input.pages);
-			return await runTranscription(id, input.filePath, (opts) => transcribePdf(pdfPath, input.pages, needed, opts));
+			if (needed.length === 0) return { text: joinPages(input.pages) };
+			// Picture-only pages need an image model: a text-only vision slot gets the plan's
+			// image model; without one, the import says which pages' pictures were left out.
+			return await runTranscription(id, input.filePath, (opts) => transcribePdf(pdfPath, input.pages, needed, opts), (base) => {
+				const selectedSeesImages = base.model.input.includes("image");
+				const fallback = selectedSeesImages ? undefined : pdfImageFallback();
+				const plan = pictureReadPlan({ selectedSeesImages, fallbackAvailable: fallback !== undefined, skippedPages: needed, modelName: base.model.name || base.model.id });
+				return { engine: plan.mode === "fallback" && fallback ? fallback : base, notice: plan.notice };
+			});
 		} finally {
 			await fs.rm(dir, { recursive: true, force: true });
 		}
@@ -1445,9 +1457,16 @@ export function createExtractionPipeline(deps: ExtractionPipelineDeps): Extracti
 	 *  usage entry — the transcription stage only; nothing to persist when
 	 *  no call billed. Nothing readable at all fails the import, never
 	 *  feeds the extractor an empty source. */
-	async function runTranscription(id: string, filePath: string, transcribe: (opts: TranscribeOptions) => Promise<string>): Promise<string> {
+	async function runTranscription(
+		id: string,
+		filePath: string,
+		transcribe: (opts: TranscribeOptions) => Promise<string>,
+		choose?: (base: PiEngine) => { engine: PiEngine; notice?: string },
+	): Promise<{ text: string; notice?: string }> {
 		refuseIfStagesUnready({ transcription: true });
-		const engine = stageEngine("pdfReader", deps.transcriber)!;
+		const base = stageEngine("pdfReader", deps.transcriber)!;
+		const picked = choose ? choose(base) : { engine: base, notice: undefined };
+		const engine = picked.engine;
 		const jobKey = `${id}#transcribe`;
 		const t0 = performance.now();
 		setPhase(jobKey, "transcribing", "notes", filePath);
@@ -1480,12 +1499,12 @@ export function createExtractionPipeline(deps: ExtractionPipelineDeps): Extracti
 			finishExtraction(jobKey);
 		}
 		if (!text.trim()) throw new NotesImportError("failed", { nodes: 0, chains: 0 }, "No text could be read from this file.");
-		return text;
+		return { text, notice: picked.notice };
 	}
 
 	/** Every explicit import processes the whole file. Identity, source digest,
 	 * auditor and usage history remain source-scoped; this is not exactly-once. */
-	async function importNotes(input: NotesImportInput): Promise<EmissionStats> {
+	async function importNotes(input: NotesImportInput): Promise<NotesImportStats> {
 		const id = `src_${crypto.createHash("sha256").update(input.filePath).digest("hex").slice(0, 12)}`;
 		// Acquire BEFORE source upsert: overlapping contents must not alter metadata.
 		if (inFlight.has(id)) throw new NotesImportError("busy", { nodes: 0, chains: 0 }, "This file is already being imported. Try again when it finishes.");
@@ -1493,8 +1512,9 @@ export function createExtractionPipeline(deps: ExtractionPipelineDeps): Extracti
 		try {
 			const importedAt = new Date().toISOString();
 			graphStore.upsertSource({ id, filePath: input.filePath, importedAt });
-			const text = "text" in input ? input.text : await transcribeSource(id, input);
-			return await runNotesExtraction({ id, filePath: input.filePath, text, importedAt });
+			const { text, notice } = "text" in input ? { text: input.text, notice: undefined } : await transcribeSource(id, input);
+			const stats = await runNotesExtraction({ id, filePath: input.filePath, text, importedAt });
+			return notice ? { ...stats, notice } : stats;
 		} catch (err) {
 			if (err instanceof NotesImportError || err instanceof ModelsNotConfiguredError || err instanceof ProviderKeyMissingError) throw err;
 			throw new NotesImportError("failed", { nodes: 0, chains: 0 }, err instanceof Error ? err.message : String(err), { cause: err });

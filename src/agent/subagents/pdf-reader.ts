@@ -9,7 +9,16 @@ import { providerEventObserver, type ProviderEventObserver } from "../provider-e
 import { backgroundCaptureStream, createBackgroundCapture, type BackgroundCapture } from "../background-capture.ts";
 import type { PdfResult, PdfToolInput } from "../../core/contracts.ts";
 import { getHeadless, type HeadlessApi } from "./headless.ts";
-import { pdfExtract, pdfInfo, pdfProbe, pdfSearch, type PdfSearchHit } from "./pdf-ops.ts";
+import { parsePageSpec, pdfExtract, pdfInfo, pdfPageCount, pdfProbe, pdfSearch, type PdfInfo, type PdfSearchHit } from "./pdf-ops.ts";
+import {
+	isScannedPdf,
+	pdfRoute,
+	readerCrashFailure,
+	scannedTextOnlyFailure,
+	textOnlyFiguresNotice,
+	unreadablePdfFailure,
+	visualPages,
+} from "../pdf-disclaimer.ts";
 
 /**
  * The pdf-reader sub-agent (sources v0, 2026-09): reads a learner-provided
@@ -57,6 +66,15 @@ Your FINAL assistant message is your entire deliverable — it must stand alone,
 claim cited as (p. N). End with a line "Pages consulted: N, N, …" listing every page you
 extracted or rendered.`;
 
+/** Appended for a model that cannot see images (DeepSeek on the Crux relay):
+ *  pictures never reach it, so the doctrine's rendering steps are off. */
+const TEXT_ONLY_ADDENDUM = `
+
+THIS MODEL READS TEXT ONLY (this overrides the rendering steps above). Page images never reach you, and pdf_render is not available. So:
+- Work from the extracted text only (pdf_info, pdf_extract, pdf_search).
+- Where a picture, diagram, chart or equation carries meaning the text lacks, say so and cite its page. Do not describe or guess what it shows.
+- Never claim to have read a picture or an equation. The learner is told separately which pages' pictures were not read; do not repeat that notice at length.`;
+
 const MAX_ITERATIONS = 14;
 /** Rendered pages per pdf_render call — the skill renders selectively; a
  *  batch cap keeps one over-eager call from flooding the vision context. */
@@ -73,6 +91,9 @@ export interface PdfReaderOptions {
 	maxIterations?: number;
 	/** Debug: raw provider-event recording key (LH_PROVIDER_EVENTS=1). */
 	chatId?: string;
+	/** An image-capable engine to read with when the selected one is text-only
+	 *  (the plan's image model on the Crux relay). Absent = text-only reading. */
+	imageFallback?: () => PiEngine | undefined;
 }
 
 export interface PdfReaderInput extends PdfToolInput {}
@@ -169,26 +190,52 @@ export async function runPdfReaderAgent(
 ): Promise<PdfResult> {
 	const maxIterations = opts.maxIterations ?? MAX_ITERATIONS;
 	let pdfPath = input.path;
-	let openError: string | null;
+	let openError: { name?: string; message: string } | null;
 	// Source denial is an ordinary upfront PDF failure, before parsing,
 	// rendering or any model request (including direct reader invocations).
 	try {
 		pdfPath = resolveSourcePath(input.path);
 		openError = await probeReadable(pdfPath);
 	} catch (err) {
-		openError = err instanceof Error ? err.message : String(err);
+		openError = errorShape(err);
 	}
 	if (openError) {
-		return { path: pdfPath, question: input.question, brief: `PDF failed: ${openError}`, pagesRead: [], pagesConsulted: [] };
+		return { path: pdfPath, question: input.question, brief: unreadablePdfFailure(openError), pagesRead: [], pagesConsulted: [] };
 	}
 	const headless = opts.headless ?? getHeadless();
 	// No Chrome gate (Wave E, 2026-10-10): pdf_render is native now
 	// (pdfjs paints into @napi-rs/canvas in-process) — the whole pdf-reader
 	// runs browser-free; text tools always worked without one.
 
+	// Picture-blind models (text-only, e.g. DeepSeek) never receive page images:
+	// read with the plan's image model when there is one, else as text only.
+	const selected = opts.engine ?? piEngineFor("pdfReader");
+	const selectedSeesImages = selected.model.input.includes("image");
+	const fallback = selectedSeesImages ? undefined : opts.imageFallback?.();
+	const route = pdfRoute(selectedSeesImages, fallback?.model.input.includes("image") ? fallback.model.id : undefined);
+	const engine = route.kind === "fallback" ? fallback! : selected;
+	const textOnly = !engine.model.input.includes("image");
+	const modelName = engine.model.name || engine.model.id;
+
+	let info: PdfInfo | undefined;
+	let pageCount: number;
+	try {
+		pageCount = await pdfPageCount(pdfPath);
+		// Text-only reads need the page signals up front: the notice names the skipped pages.
+		if (textOnly) info = await pdfInfo(pdfPath);
+	} catch (err) {
+		return { path: pdfPath, question: input.question, brief: unreadablePdfFailure(errorShape(err)), pagesRead: [], pagesConsulted: [] };
+	}
+	// A scan with no text layer gives a text-only model nothing at all: say so before any model call.
+	if (info && isScannedPdf(info.pages)) {
+		return { path: pdfPath, question: input.question, brief: scannedTextOnlyFailure(modelName), pagesRead: [], pagesConsulted: [] };
+	}
+	const notice = info ? textOnlyFiguresNotice(modelName, visualPages(info.pages)) : undefined;
+	const withNotice = (r: PdfResult): PdfResult => (notice ? { ...r, notice } : r);
+
 	const tools = createPdfTools(pdfPath);
-	const toolDeclarations = Object.values(tools);
-	const engine = opts.engine ?? piEngineFor("pdfReader");
+	const toolDeclarations = Object.values(tools).filter((t) => !(textOnly && t.name === "pdf_render"));
+	const systemPrompt = textOnly ? INSTRUCTIONS + TEXT_ONLY_ADDENDUM : INSTRUCTIONS;
 	// BYOK (owner, 2026-09-22): the level rides the injected engine — no
 	// factory pin to consult (engine.level is the resolved/clamped value).
 	const reasoning = engine.level;
@@ -217,7 +264,7 @@ export async function runPdfReaderAgent(
 		for (let iteration = 0; iteration < maxIterations; iteration++) {
 			const result = await streamOnce(
 				streamEngine,
-				INSTRUCTIONS,
+				systemPrompt,
 				messages,
 				toolDeclarations,
 				sessionId,
@@ -251,7 +298,7 @@ export async function runPdfReaderAgent(
 					];
 					continue;
 				}
-				return { path: pdfPath, question: input.question, brief: finalText || "(no brief text)", pagesRead: [...read].sort((a, b) => a - b), pagesConsulted: [...consulted].sort((a, b) => a - b) };
+				return withNotice({ path: pdfPath, question: input.question, brief: finalText || "(no brief text)", pagesRead: [...read].sort((a, b) => a - b), pagesConsulted: [...consulted].sort((a, b) => a - b) });
 			}
 
 			const toolResults: ToolResultMessage[] = [];
@@ -271,7 +318,7 @@ export async function runPdfReaderAgent(
 						opts.onActivity?.(`pdf_extract: ${spec}`);
 						const r = await pdfExtractText(pdfPath, spec);
 						toolResults.push(toolText(call.id, call.name, String(r)));
-						for (const p of specNumbers(spec, Infinity)) {
+						for (const p of parsePageSpec(spec, pageCount)) {
 							consulted.add(p);
 							read.add(p);
 						}
@@ -292,10 +339,12 @@ export async function runPdfReaderAgent(
 								: cap.map((h) => `=== Page ${h.page}, line ${h.line} ===\n${h.context}`).join("\n") +
 									(hits.length > cap.length ? `\n\n[${hits.length - cap.length} more hits — narrow the query.]` : "");
 						toolResults.push(toolText(call.id, call.name, body));
+					} else if (call.name === "pdf_render" && textOnly) {
+						toolResults.push(toolText(call.id, call.name, "ERROR: pdf_render is not available: this model reads text only. Use pdf_extract and pdf_search."));
 					} else if (call.name === "pdf_render") {
 						const spec = String(args.pages ?? "1");
 						const dpi = numOr(args.dpi, 150);
-						const wanted = specNumbers(spec, RENDER_BATCH_CAP);
+						const wanted = parsePageSpec(spec, pageCount).slice(0, RENDER_BATCH_CAP);
 						opts.onActivity?.(`pdf_render: ${spec} @${dpi}dpi`);
 						const pages = await headless.renderPdfPages(pdfPath, wanted, { dpi });
 						const processed: { page: number; image: ProcessImageResult }[] = [];
@@ -357,62 +406,50 @@ export async function runPdfReaderAgent(
 	} catch (err) {
 		captureError = err;
 		const msg = err instanceof Error ? err.message : String(err);
-		return { path: pdfPath, question: input.question, brief: `PDF failed: the reader crashed — ${msg}`, pagesRead: [...read].sort((a, b) => a - b), pagesConsulted: [...consulted].sort((a, b) => a - b) };
+		console.warn(`[pdf-reader] crashed: ${msg}`);
+		return { path: pdfPath, question: input.question, brief: readerCrashFailure(), pagesRead: [...read].sort((a, b) => a - b), pagesConsulted: [...consulted].sort((a, b) => a - b) };
 	} finally {
 		capture?.finish(captureError);
 	}
 
 	// Iteration limit: deliver whatever was honestly consulted (never invention).
-	return {
+	if (!finalText) {
+		return { path: pdfPath, question: input.question, brief: readerCrashFailure(), pagesRead: [...read].sort((a, b) => a - b), pagesConsulted: [...consulted].sort((a, b) => a - b) };
+	}
+	return withNotice({
 		path: pdfPath,
 		question: input.question,
-		brief: finalText || `PDF failed: iteration limit (${maxIterations}) reached without a brief.`,
+		brief: finalText,
 		pagesRead: [...read].sort((a, b) => a - b),
 		pagesConsulted: [...consulted].sort((a, b) => a - b),
-	};
+	});
 }
 
 // ─── small helpers ───────────────────────────────────────────────────────────
-
-/** Parse a page spec into concrete page numbers, capped. */
-function specNumbers(spec: string, cap: number): number[] {
-	// total = Infinity: bounds come from the document at execution time; the
-	// cap alone protects the batch.
-	const parts = spec.trim().toLowerCase() === "all" ? [`${cap}`] : spec.split(",");
-	const out = new Set<number>();
-	for (const part of parts) {
-		const p = part.trim();
-		if (!p) continue;
-		if (p.includes("-")) {
-			const [s, e] = p.split("-", 2) as [string, string];
-			const start = Math.max(1, parseInt(s, 10) || 1);
-			const end = Math.min(parseInt(e, 10) || start, start + cap - 1);
-			for (let pg = start; pg <= end && out.size < cap; pg++) out.add(pg);
-		} else {
-			const pg = parseInt(p, 10);
-			if (Number.isFinite(pg) && pg >= 1 && out.size < cap) out.add(pg);
-		}
-	}
-	return [...out].sort((a, b) => a - b);
-}
 
 function numOr(v: unknown, dflt: number): number {
 	return typeof v === "number" && Number.isFinite(v) ? v : dflt;
 }
 
 /** Cheap upfront readability probe — real parsing happens inside the tools. */
-async function probeReadable(pdfPath: string): Promise<string | null> {
+async function probeReadable(pdfPath: string): Promise<{ name?: string; message: string } | null> {
 	try {
 		const fs = await import("node:fs/promises");
 		const stat = await fs.stat(pdfPath);
-		if (!stat.isFile()) return "not a regular file";
-		if (stat.size === 0) return "file is empty";
+		if (!stat.isFile()) return { message: "not a regular file" };
+		if (stat.size === 0) return { message: "file is empty" };
 		// parse probe: pdfProbe throws pdfjs's precise error for garbage files
 		await pdfProbe(pdfPath);
 		return null;
 	} catch (err) {
-		return err instanceof Error ? err.message : String(err);
+		return errorShape(err);
 	}
+}
+
+/** An error as the disclaimer mapper reads it (name for pdf.js classes, message for the rest). */
+function errorShape(err: unknown): { name?: string; message: string } {
+	if (err instanceof Error) return { name: err.name, message: err.message };
+	return { message: String(err) };
 }
 
 /** One raw model call (no agent loop): the visual-maker's streamOnce,

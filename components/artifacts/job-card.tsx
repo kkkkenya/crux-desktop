@@ -34,7 +34,7 @@ export function PdfJobCard({ part }: ArtifactPartProps) {
  * line. Exported: the steer card renders it under the PDF-complete badge,
  * the same expand-on-demand idiom as research.
  */
-export function PdfBriefCard({ output }: { output: unknown }) {
+export function PdfBriefCard({ output, showNotice = true }: { output: unknown; showNotice?: boolean }) {
 	const result = output as PdfResult | undefined;
 	if (!result || typeof result.brief !== "string") {
 		return (
@@ -58,6 +58,11 @@ export function PdfBriefCard({ output }: { output: unknown }) {
 			<div className="text-sm [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
 				<MessageResponse>{result.brief}</MessageResponse>
 			</div>
+			{!failed && showNotice && result.notice && (
+				<p role="note" data-testid="pdf-notice" className="mt-3 border-t pt-2 text-xs text-amber-600 dark:text-amber-400">
+					{result.notice}
+				</p>
+			)}
 			{!failed && readList.length > 0 && (
 				<div className="mt-3 border-t pt-2 text-xs text-muted-foreground">
 					Pages read: {readList.join(", ")}

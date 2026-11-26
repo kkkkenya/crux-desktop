@@ -11,6 +11,8 @@ import type { LearnerImage } from "../tools/learner-image.ts";
 import type { PdfFigureImage, PdfFigureSource } from "../tools/pdf-figure.ts";
 import { embedLearnerImage, LEARNER_IMAGE_HREF } from "../../core/learner-image-svg.ts";
 import { annotationPlacementProblem } from "./annotation-svg.ts";
+import { formatLintForMaker, lintFigureSvg } from "./figure-lint.ts";
+import { buildImagePrompt, splitFigureSpec } from "./figure-prompt.ts";
 import { getHeadless, type HeadlessApi } from "./headless.ts";
 
 /**
@@ -112,9 +114,25 @@ SVG requirements:
 - Draw only what the brief specifies; never invent data, values, or shapes to fill space.
 - Plain, clean styling: at most one accent color. An explanatory diagram, not art.
 
+FREE BODY DIAGRAMS (statics, dynamics, mechanics of materials). A student copies these into their working,
+so each one must be exactly what a careful lecturer would draw on the board:
+- Isolate the body: draw only that body (a beam, a member, a plate, a cut section) in black outline. Nothing else of the structure.
+- Every force is a single-headed arrow that STARTS on its point of application, points its true direction, and carries its symbol and value ("P = 10 kN"). Unknown reactions are drawn in their assumed positive direction and labelled with the unknown symbol (A_x, A_y, M_A).
+- Supports are replaced by their reactions, never drawn as support symbols: pin = two components (horizontal and vertical); roller, smooth surface or link = one force normal to the surface (or along the link); fixed = two force components plus a moment (a curved arrow).
+- Distributed loads: short arrows along the span labelled with the intensity (w = 2 kN/m), plus ONE resultant arrow at its centroid labelled with its value. Uniform: W = wL at mid-span. Triangular (peak at one end): W = half the area, acting one third of the length from the peak end.
+- Moments and couples: a curved arrow around the point, labelled with value and sense. A torque on a shaft side view is a double-headed vector along the axis (say so in the notes).
+- Dimensions: a dimension line with arrowheads at both ends, outside the body, labelled with the length. Key points carry the letters the equations use (A, B, C).
+- One pair of coordinate axes (x right, y up unless the brief says otherwise) at a corner, labelled, with the sign convention stated in the notes.
+- Clean: no shading, no 3D, no colour beyond black and one accent, no label touching an arrow or another label (leave 6 units).
+- Self-check before you finish: list the unknowns and the equations (3 per rigid body in plane: sum Fx, sum Fy, sum M), confirm every support is replaced by its reactions and every arrow is labelled, and give the counts in your notes.
+- Mark force arrows with class="force" (reactions: "reaction", moments: "moment", distributed loads: "load"), and define the marker once: <marker id="arr" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#111"/></marker>. Every write and edit returns a lint report: fix every error, and fix or justify every warning.
+
 Your FINAL message: 1-2 sentences of notes for the teacher (what the figure shows, any caveats) —
 NEVER the SVG source itself. If you genuinely cannot make a correct picture of the brief, say exactly
-that in your final message and why.`;
+that in your final message and why.
+When the figure is a free body diagram or another diagram a student could redraw from a list, add after the notes one line that starts FIGURE_SPEC: followed by one JSON object with the figure's content, and nothing after it:
+FIGURE_SPEC: {"kind":"fbd","title":"Beam AB","body":"uniform beam AB, 4 m, horizontal","forces":[{"label":"P","value":"10 kN","direction":"downward","point":"B"}],"moments":[],"distributed":[],"supports":[{"type":"pin","point":"A","reactions":["A_x","A_y"]},{"type":"roller","point":"B","reactions":["B_y"]}],"dimensions":[{"between":"A and B","value":"4 m"}],"axes":"x to the right, y up, origin at A","notes":""}
+Use the symbols and values exactly as the SVG shows them. Use [] for a list the figure does not have.`;
 
 const IMAGE_INSTRUCTIONS = `ANNOTATING THE LEARNER'S IMAGE — this brief comes with one of the learner's own pictures. Your
 figure is that picture with marks on it, not a new drawing:
@@ -274,6 +292,8 @@ export async function runVisualMaker(input: VisualMakerInput, opts: VisualMakerO
 		if (!learnerImage) return null;
 		return annotationPlacementProblem(svg, learnerImage.width, learnerImage.height);
 	};
+	/** The deterministic figure lint, read back with each write (drawn figures only: an annotation is the learner's photo). */
+	const lintReport = (svg: string): string => (learnerImage ? "" : formatLintForMaker(lintFigureSvg(svg)));
 	let currentSvg: string | null = null;
 	/** The svg shown in the most recent render (null = never rendered). */
 	let renderedSvg: string | null = null;
@@ -355,7 +375,7 @@ export async function runVisualMaker(input: VisualMakerInput, opts: VisualMakerO
 					}
 					currentSvg = svg;
 					opts.onActivity?.(`write_svg: ${(svg.length / 1024).toFixed(1)} KB`);
-					toolResults.push(toolText(call.id, call.name, `Saved (${svg.length} bytes). Call render_svg to look at it.`));
+					toolResults.push(toolText(call.id, call.name, `Saved (${svg.length} bytes). ${lintReport(svg)} Call render_svg to look at it.`));
 				} else if (call.name === "edit_svg") {
 					const edit = call.arguments as { old_text?: unknown; new_text?: unknown };
 					if (!currentSvg) {
@@ -391,7 +411,7 @@ export async function runVisualMaker(input: VisualMakerInput, opts: VisualMakerO
 					}
 					currentSvg = edited;
 					opts.onActivity?.("edit_svg: applied");
-					toolResults.push(toolText(call.id, call.name, "OK — replaced 1 occurrence. Call render_svg to look at the edited SVG."));
+					toolResults.push(toolText(call.id, call.name, `OK — replaced 1 occurrence. ${lintReport(edited)} Call render_svg to look at the edited SVG.`));
 				} else if (call.name === "render_svg") {
 					if (!currentSvg) {
 						toolResults.push(toolText(call.id, call.name, "ERROR: nothing to render — call write_svg first."));
@@ -576,7 +596,11 @@ function finish(svg: string | null, finalText: string, image?: LearnerImage | Pd
 			notes: `FAILED: the maker never wrote an SVG.${finalText ? ` (${finalText.slice(0, 300)})` : ""}`,
 		};
 	}
-	if (!image) return { svg, notes: finalText || undefined };
+	// The maker's FIGURE_SPEC (drawn figures only) becomes the ready-to-paste image prompt.
+	const { notes, spec } = image ? { notes: finalText, spec: null } : splitFigureSpec(finalText);
+	const imagePrompt = spec ? buildImagePrompt(spec) : undefined;
+	const withPrompt = imagePrompt ? { imagePrompt } : {};
+	if (!image) return { svg, notes: notes || undefined, ...withPrompt };
 	const fromPdf = "page" in image ? { page: image.page, ...(image.crop ? { crop: image.crop } : {}) } : {};
 	return { svg, notes: finalText || undefined, image: { path: image.path, snapshotId: image.snapshotId, ...fromPdf } };
 }

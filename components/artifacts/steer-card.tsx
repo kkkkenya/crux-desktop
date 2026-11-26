@@ -84,6 +84,7 @@ function PdfCompleteBadge({ result }: { result: PdfResult }) {
 	// the ?? is runtime tolerance for pre-split persisted steers.
 	const readPages = result.pagesRead ?? result.pagesConsulted;
 	return (
+		<div className="w-full">
 		<details data-testid="pdf-complete-badge" className="group w-full text-xs text-muted-foreground">
 			<summary className="flex cursor-pointer select-none list-none items-center gap-2 [&::-webkit-details-marker]:hidden">
 				<CheckIcon className="size-3.5" />
@@ -98,9 +99,15 @@ function PdfCompleteBadge({ result }: { result: PdfResult }) {
 				<span className="ml-1 hidden text-xs text-muted-foreground/70 group-open:inline">hide brief</span>
 			</summary>
 			<div className="mt-2">
-				<PdfBriefCard output={result} />
+				<PdfBriefCard output={result} showNotice={false} />
 			</div>
 		</details>
+		{result.notice && (
+			<p role="note" data-testid="pdf-notice" className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+				{result.notice}
+			</p>
+		)}
+		</div>
 	);
 }
 

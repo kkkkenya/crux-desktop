@@ -120,8 +120,9 @@ export async function POST(request: Request) {
 					continue;
 				}
 				sourceDirectory.registerImport(filePath);
-				const stats = await extraction.importNotes(notes.input);
-				results.push({ filePath, requestIndex, outcome: "completed", ok: true, stats, ...(notes.notice ? { notice: notes.notice } : {}) });
+				const { notice: pictureNotice, ...stats } = await extraction.importNotes(notes.input);
+				const notice = [notes.notice, pictureNotice].filter(Boolean).join(" ");
+				results.push({ filePath, requestIndex, outcome: "completed", ok: true, stats, ...(notice ? { notice } : {}) });
 			} catch (err) {
 				if (err instanceof ModelsNotConfiguredError) {
 					results.push({ filePath, ok: false, requestIndex, outcome: "failed", error: err.envelope.error,

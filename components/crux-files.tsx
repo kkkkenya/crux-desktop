@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
 import { blurAfterPointerClick } from "@/components/focus-hygiene";
 import { cn } from "@/lib/utils";
+import { sortFiles } from "@/lib/file-list";
 import { cruxBridge } from "@/components/crux-study";
 import { openInCrux } from "@/components/crux-reader";
 import type { CruxBridge, CruxFile, CruxLocalFile, CruxUnit } from "@/components/crux-hub";
@@ -25,7 +26,8 @@ const LAST_UNIT = "crux:hub-unit"; // shared with Hub files, so both open on the
 /** What the reader can show: saved PDFs and HTML pages, solutions first. Markdown packs are for the tutor. */
 export function readable(files: readonly CruxLocalFile[]): { solutions: CruxLocalFile[]; saved: CruxLocalFile[] } {
 	const shown = files.filter((f) => f.kind === "pdf" || f.kind === "html");
-	return { solutions: shown.filter((f) => f.solution), saved: shown.filter((f) => !f.solution) };
+	// Natural order, so "Week 2" sits before "Week 10" (the saved list is one page; no sort control needed here).
+	return { solutions: sortFiles(shown.filter((f) => f.solution), "name"), saved: sortFiles(shown.filter((f) => !f.solution), "name") };
 }
 
 /** Hub PDFs of the unit that are not on this computer yet. */

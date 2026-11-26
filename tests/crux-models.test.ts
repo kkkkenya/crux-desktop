@@ -20,7 +20,9 @@ const { chatStore } = await import("../src/store/chats.ts");
 it("cruxLiveModel: paused Crux GLM becomes DeepSeek; everything else is left alone", () => {
 	assert.deepEqual(cruxLiveModel({ provider: "crux", id: "glm-5.3" }), { provider: "crux", id: "deepseek-flash" });
 	assert.deepEqual(cruxLiveModel({ provider: "crux", id: "glm-5.3-flash" }), { provider: "crux", id: "deepseek-flash" });
-	assert.deepEqual(cruxLiveModel({ provider: "crux", id: "gemini-3.8-flash" }), { provider: "crux", id: "gemini-3.8-flash" });
+	assert.deepEqual(cruxLiveModel({ provider: "crux", id: "gemini-3.8-flash" }), { provider: "crux", id: "gemini-4-hydrogen" }, "3.8 Flash was replaced by Hydrogen");
+	assert.deepEqual(cruxLiveModel({ provider: "crux", id: "gemini-4-hydrogen" }), { provider: "crux", id: "gemini-4-hydrogen" });
+	assert.deepEqual(cruxLiveModel({ provider: "google", id: "gemini-3.8-flash" }), { provider: "google", id: "gemini-3.8-flash" }, "a student's own Google key is theirs");
 	assert.deepEqual(cruxLiveModel({ provider: "zai", id: "glm-5.3" }), { provider: "zai", id: "glm-5.3" }, "a student's own z.ai key is theirs");
 	assert.equal(cruxLiveModel(undefined), undefined);
 });

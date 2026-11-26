@@ -5,6 +5,7 @@ import { FileSymlinkIcon, XIcon } from "lucide-react";
 import { directoryReferencePath, quoteFilePath } from "@/src/core";
 import { appendToPrimaryInput } from "@/components/dictation";
 import { INSERT_FILE_PATHS_EVENT } from "@/components/path-input";
+import { FILE_NOTICE_EVENT } from "@/lib/paste-files";
 
 export const BROWSER_NOTICE = "Local file paths can only be attached in the desktop app. You can paste a full path instead.";
 
@@ -26,9 +27,13 @@ export function FilePathDropZone({ children, className }: { children: React.Reac
 		};
 		window.addEventListener("dragover", preventOutsideNavigation);
 		window.addEventListener("drop", preventOutsideNavigation);
+		// Paste problems (path-input) show in the same notice line as drop problems.
+		const showPasteNotice = (event: Event) => setNotice(String((event as CustomEvent<string>).detail ?? ""));
+		window.addEventListener(FILE_NOTICE_EVENT, showPasteNotice);
 		return () => {
 			window.removeEventListener("dragover", preventOutsideNavigation);
 			window.removeEventListener("drop", preventOutsideNavigation);
+			window.removeEventListener(FILE_NOTICE_EVENT, showPasteNotice);
 		};
 	}, []);
 	return (
@@ -82,8 +87,14 @@ export function FilePathDropZone({ children, className }: { children: React.Reac
 					return;
 				}
 				const focused = document.activeElement?.closest<HTMLElement>("[data-file-path-input]");
+				// A drop adds the same chips the attach button adds: the focused
+				// path input, else the session's (or home's) composer, the same
+				// event the attach button dispatches. Text append is the last resort.
+				const composer = document.querySelector<HTMLElement>("[data-file-path-default]");
 				if (focused && event.currentTarget.contains(focused)) {
 					focused.dispatchEvent(new CustomEvent(INSERT_FILE_PATHS_EVENT, { detail: paths }));
+				} else if (composer) {
+					composer.dispatchEvent(new CustomEvent(INSERT_FILE_PATHS_EVENT, { detail: paths }));
 				} else if (!appendToPrimaryInput(paths.map(quoteFilePath).join(" "))) {
 					setNotice("Open a chat to attach file paths.");
 					return;
@@ -96,7 +107,7 @@ export function FilePathDropZone({ children, className }: { children: React.Reac
 				<div data-testid="file-path-drop-indicator" className="pointer-events-none absolute inset-2 z-50 flex items-center justify-center rounded-xl border-2 border-dashed border-primary bg-background/85 p-6 text-center backdrop-blur-sm">
 					<div className="flex max-w-md flex-col items-center gap-3">
 						<FileSymlinkIcon className="size-8 text-primary" aria-hidden />
-						<span className="font-ui text-sm">{window.lh?.getPathForFile ? "Drop to attach file paths" : BROWSER_NOTICE}</span>
+						<span className="font-ui text-sm">{window.lh?.getPathForFile ? "Drop to add to this session" : BROWSER_NOTICE}</span>
 					</div>
 				</div>
 			)}

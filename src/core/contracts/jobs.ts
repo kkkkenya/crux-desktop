@@ -231,6 +231,9 @@ export interface VisualResult {
 	 *  Annotation SVGs retain a learner-image placeholder; image identifies the session snapshot. */
 	svg: string;
 	notes?: string;
+	/** A ready-to-paste prompt for an image AI (Gemini, ChatGPT) describing this drawn figure.
+	 *  Built from the maker's structured figure spec; absent when the figure has none. */
+	imagePrompt?: string;
 	/** Present when the figure annotates a learner image: its absolute
 	 *  path. Photos never invert, so the card hides the switch. From a PDF,
 	 *  path is the PDF, page is 1-based, and crop (page fractions from the
@@ -264,6 +267,9 @@ export interface PdfResult {
 	/** Every page whose content entered the loop, search-hit context lines
 	 *  included — the full audit set (the brief's citations may point here). */
 	pagesConsulted: number[];
+	/** One plain sentence the learner must hear when part of the PDF was not
+	 *  read (the text-only model skipped its pictures). Absent = fully read. */
+	notice?: string;
 }
 
 // ─── Sub-agent steer messages (THE ASYNC PROTOCOL §3–4) ─────────────────────
@@ -364,7 +370,11 @@ function steerText(kind: JobKind, result: ResearchResult | DemoResult | VisualRe
 	if (kind === "research")
 		return `Research complete — the researcher's full brief follows. Weave it into the lesson and cite its sources when you use its findings:\n\n${(result as ResearchResult).brief}`;
 	if (kind === "pdf")
-		return `PDF reading complete — the reader's brief on "${(result as PdfResult).path}" follows, with page citations. Weave it into the lesson and cite pages when you use it:\n\n${(result as PdfResult).brief}`;
+		return `PDF reading complete — the reader's brief on "${(result as PdfResult).path}" follows, with page citations. Weave it into the lesson and cite pages when you use it:\n\n${(result as PdfResult).brief}${
+			(result as PdfResult).notice
+				? `\n\nTell the learner this, in your own words, before the brief: "${(result as PdfResult).notice}" Do not describe pictures, diagrams or equations you were not shown.`
+				: ""
+		}`;
 	if (kind === "demo")
 		return `The demo "${(result as DemoResult).title}" is built, headlessly tested, and rendered in the lesson. Builder notes: ${
 			(result as DemoResult).notes ?? "(none)"

@@ -72,6 +72,11 @@ export function refreshCruxHosted(force = false): Promise<void> {
 	return inFlight;
 }
 
+/** The plan's image-capable model id (Gemini on the relay), or undefined when the plan has none. */
+export function cruxImageModelId(): string | undefined {
+	return models.find((m) => m.image === true && typeof m.id === "string" && m.id)?.id;
+}
+
 export function cruxHostedReady(): boolean {
 	return cruxDesktopConnected() && models.length > 0;
 }

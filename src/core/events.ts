@@ -53,7 +53,7 @@ export interface ServerEvents {
 	 *  submit. */
 	"compaction-changed": { chatId: string; running: boolean };
 	/** Crux hosted models (Track H3): the relay moved to another model on its own
-	 *  ("DeepSeek Flash is busy, so Gemini 3.8 Flash answered."). Open chats say it once. */
+	 *  ("DeepSeek Flash is busy, so Gemini 4 Hydrogen answered."). Open chats say it once. */
 	"crux-note": { chatId?: string; text: string };
 }
 

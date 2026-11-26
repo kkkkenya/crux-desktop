@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { MenuShell } from "@/components/menu-shell";
 import { DeleteSessionDialog } from "@/components/delete-session-dialog";
 import type { ChatDeleteMode } from "@/src/core";
-import { DumbbellIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, PlusIcon, SearchIcon, SettingsIcon } from "lucide-react";
+import { DumbbellIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, PencilIcon, PlusIcon, SearchIcon, SettingsIcon } from "lucide-react";
 import { ActivitySection } from "@/components/activity-dock";
 import { CoverageMenuBlock } from "@/components/extraction-coverage";
 import { LhMark } from "@/components/lh-mark";
@@ -70,6 +70,8 @@ declare global {
 			getPathForFile?: (file: File) => string;
 			/** Choose one original directory path, without reading its contents. */
 			chooseAttachmentFolder?: () => Promise<string | null>;
+			/** A pasted screenshot or file without a path: saved to Documents/Crux/Pasted, returns its path. */
+			saveAttachmentPaste?: (payload: { name: string; mime: string; bytes: Uint8Array }) => Promise<string>;
 			/** External Next desktop-dev uses the server's web connections. */
 			subscriptionTransport?: "desktop" | "web";
 			openSubscriptionBrowser?: (action: string) => Promise<void>;
@@ -301,45 +303,68 @@ export function SessionRow({
 	onOpen,
 	kbdSelected = false,
 	onContextMenu,
+	onRename,
 }: {
 	chat: ChatListItem;
 	active: boolean;
 	onOpen: () => void;
+	/** Rename this session: double-click, F2 on the focused row, or the pencil on hover. */
+	onRename?: () => void;
 	/** Keyboard-cycle highlight (shortcut wave A: Alt+↑/↓ + Alt+Enter) —
 	 *  visually distinct from the active session, which stays filled. */
 	kbdSelected?: boolean;
 	/** Right-click opens the context menu (wave 6: Rename / Delete). */
 	onContextMenu?: (e: React.MouseEvent<HTMLButtonElement>) => void;
 }) {
+	// The row and its pencil are siblings (never a button inside a button). The
+	// pencil is a span, so the keyboard cycle's button index still counts rows only.
 	return (
-		<button
-			type="button"
-			onClick={onOpen}
-			onContextMenu={onContextMenu}
-			data-testid={kbdSelected ? "session-row-kbd" : "session-row"}
-			className={cn(
-				"relative mb-0.5 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-accent",
-				active && "bg-accent",
-				kbdSelected && !active && "bg-accent/60 ring-1 ring-border",
-			)}
-		>
-			<SessionStatus busy={chat.busy || chat.compacting} />
-			<span className="min-w-0 flex-1">
-				{/* Titles are the learner's/teacher's WORDS — Source Sans 3, the
-				    same voice the words were typed in (every input is lh-prose);
-				    the meta line below stays JetBrains Mono (machine data). One
-				    rule, finally applied to the picker too (owner, typography
-				    round): mono = chrome, Source Sans = human words. */}
-				<span className="block truncate font-prose text-(length:--lh-prose-size)">{chat.title}</span>
-				<span className="block text-xs text-muted-foreground">{sessionMeta(chat)}</span>
+		<div className="group/row relative mb-0.5">
+			<button
+				type="button"
+				onClick={onOpen}
+				onContextMenu={onContextMenu}
+				onDoubleClick={onRename}
+				onKeyDown={(e) => { if (e.key === "F2" && onRename) { e.preventDefault(); e.stopPropagation(); onRename(); } }}
+				title={onRename ? "Double-click or press F2 to rename" : undefined}
+				data-testid={kbdSelected ? "session-row-kbd" : "session-row"}
+				className={cn(
+					"relative flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-accent",
+					active && "bg-accent",
+					kbdSelected && !active && "bg-accent/60 ring-1 ring-border",
+				)}
+			>
+				<SessionStatus busy={chat.busy || chat.compacting} />
+				<span className="min-w-0 flex-1">
+					{/* Titles are the learner's/teacher's WORDS — Source Sans 3, the
+					    same voice the words were typed in (every input is lh-prose);
+					    the meta line below stays JetBrains Mono (machine data). One
+					    rule, finally applied to the picker too (owner, typography
+					    round): mono = chrome, Source Sans = human words. */}
+					<span className="block truncate font-prose text-(length:--lh-prose-size)">{chat.title}</span>
+					<span className="block text-xs text-muted-foreground">{sessionMeta(chat)}</span>
+				</span>
+				{/* The dumbbell rides the FAR RIGHT (owner round 6, 2026-10-05) —
+				    was left of the name; right-aligned keeps the titles flush with
+				    the teaching rows and reads cleaner. */}
+				{(chat.kind ?? "teach") === "practice" && (
+					<DumbbellIcon className="size-3.5 shrink-0 text-muted-foreground/70" aria-label="Practice session" />
+				)}
+			</button>
+		{onRename && (
+			<span
+				role="button"
+				tabIndex={-1}
+				aria-label={`Rename ${chat.title}`}
+				title="Rename"
+				data-testid="session-rename-pencil"
+				onClick={(e) => { e.stopPropagation(); onRename(); }}
+				className="absolute right-2 top-1/2 flex size-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md bg-card text-muted-foreground opacity-0 shadow-sm transition-opacity hover:text-foreground group-hover/row:opacity-100 group-focus-within/row:opacity-100"
+			>
+				<PencilIcon className="size-3" aria-hidden />
 			</span>
-			{/* The dumbbell rides the FAR RIGHT (owner round 6, 2026-10-05) —
-			    was left of the name; right-aligned keeps the titles flush with
-			    the teaching rows and reads cleaner. */}
-			{(chat.kind ?? "teach") === "practice" && (
-				<DumbbellIcon className="size-3.5 shrink-0 text-muted-foreground/70" aria-label="Practice session" />
-			)}
-		</button>
+		)}
+		</div>
 	);
 }
 
@@ -648,6 +673,22 @@ function SessionsSidebar() {
 		listRef.current?.querySelectorAll("button")[kbdIndex]?.scrollIntoView({ block: "nearest" });
 	}, [kbdIndex]);
 
+	// F2 renames the open session from anywhere in the sidebar's keyboard
+	// reach (not while typing in a field, and only when its row is shown).
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key !== "F2" || e.defaultPrevented || renamingId) return;
+			const t = e.target as HTMLElement | null;
+			if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+			const id = /^\/chat\/([^/?#]+)$/.exec(pathname ?? "")?.[1];
+			if (!id || !shown?.some((c) => c.id === id)) return;
+			e.preventDefault();
+			setRenamingId(id);
+		};
+		document.addEventListener("keydown", onKey);
+		return () => document.removeEventListener("keydown", onKey);
+	}, [pathname, shown, renamingId]);
+
 	useEffect(() => {
 		if (!open) return;
 		void refresh();
@@ -827,6 +868,7 @@ function SessionsSidebar() {
 										router.push(`/chat/${c.id}`);
 									}}
 									onContextMenu={(e) => openContext(e, c)}
+									onRename={() => setRenamingId(c.id)}
 								/>
 							),
 						)

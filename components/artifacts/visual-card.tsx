@@ -8,6 +8,7 @@ import { Toggle } from "@/components/settings/controls";
 import { useSessionMermaid } from "@/components/session-overlay";
 import { downloadFile } from "@/components/artifacts/download";
 import { DispatchCard } from "@/components/artifacts/dispatch-card";
+import { ImagePromptAction } from "@/components/artifacts/image-prompt-action";
 import { SvgImage } from "@/components/artifacts/svg-image";
 import { embedLearnerImage, type ArtifactPartProps, type VisualResult } from "@/src/core";
 import { useImageSnapshot } from "./use-image-snapshot";
@@ -177,6 +178,7 @@ export function VisualOutputCard({
 					)}
 				</div>
 			</div>
+				{result.imagePrompt && <ImagePromptAction prompt={result.imagePrompt} />}
 		</div>
 	);
 }

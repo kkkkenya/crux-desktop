@@ -26,6 +26,7 @@
 
 const { app, BrowserWindow, Menu, ipcMain, session, shell, dialog, powerSaveBlocker } = require("electron");
 const { pickAttachmentPath } = require("./attachment-picker.cjs");
+const { savePastedFile } = require("./pasted-files.cjs");
 const { createChatGPT, fileStore } = require("./chatgpt.cjs");
 const { attachChatGPTChild, trustedSender, chatGPTControl } = require("./chatgpt-ipc.cjs");
 const { createSubscriptions, loadSubscriptionSDK } = require("./subscriptions.cjs");
@@ -869,6 +870,10 @@ async function main() {
 
 	ipcMain.handle("lh:attachment:pick", (event, mode) => pickAttachmentPath(event, mode, {
 		BrowserWindow, dialog, trustedAppWindows, origin: new URL(url).origin,
+	}));
+	// Ctrl+V of a screenshot or a copied file with no path: saved to Documents/Crux/Pasted.
+	ipcMain.handle("lh:attachment:save-pasted", (event, payload) => savePastedFile(event, payload, {
+		BrowserWindow, trustedAppWindows, origin: new URL(url).origin, documentsDir: app.getPath("documents"),
 	}));
 
 	installMenu();

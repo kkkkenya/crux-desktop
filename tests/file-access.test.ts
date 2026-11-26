@@ -233,7 +233,7 @@ describe("live policy and all learner-source surfaces", () => {
 		await assert.rejects(createShowImageTool(ctx).execute!("x", { path: path.join(outside, "image.png") }), boundary);
 		let modelCalls = 0;
 		const result = await runPdfReaderAgent({ path: path.join(outside, "sample.pdf"), question: "?" }, { engine: { model: faux.getModel(), streamFn: (() => { modelCalls++; throw new Error("must not call"); }) as typeof faux.streamSimple } });
-		assert.match(result.brief, /^PDF failed: Access denied:/);
+		assert.match(result.brief, /^PDF failed: I'm not allowed to open this file./); // the gate's refusal, in the student's words (pdf-disclaimer.ts)
 		assert.equal(modelCalls, 0);
 		assert.equal(snapshots, 0);
 		assert.equal(jobs, 0);
@@ -268,7 +268,7 @@ describe("live policy and all learner-source surfaces", () => {
 			const runner = createJobRunner({ chatStore, jobStore, engineFor: () => engine, deliver: async () => {} });
 			await runner.runJob(id);
 			const job = jobStore.getJob(id)!;
-			assert.match(JSON.stringify(job.result), /Access denied:.*allowed folders/);
+			assert.match(JSON.stringify(job.result), /Access denied:.*allowed folders|not allowed to open this file/);
 			assert.deepEqual(job.input, input);
 			assert.equal(chatStore.getChat(chat.id)?.imageSnapshots, undefined);
 		}

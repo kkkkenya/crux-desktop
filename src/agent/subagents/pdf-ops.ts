@@ -210,7 +210,12 @@ export async function pdfExtract(filePath: string, pageSpec: string): Promise<st
 	const pages = parsePageSpec(pageSpec, doc.numPages);
 	if (pages.length === 0) return "No pages selected — page spec matched nothing.";
 	const converted = await documentToMarkdown(doc, pages);
-	return converted.map((page) => `--- Page ${page.number} ---\n${pageMarkdown(page)}`).join("\n");
+	return converted
+		.map((page) => {
+			const body = pageMarkdown(page);
+			return `--- Page ${page.number} ---\n${body || "(no text on this page: it is probably a picture or a scan)"}`;
+		})
+		.join("\n");
 }
 
 export interface PdfSearchHit {

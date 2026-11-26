@@ -119,7 +119,7 @@ describe("pdf-reader source paths", () => {
 		const missing = path.join("Course notes", "missing.pdf");
 		const result = await runPdfReaderAgent({ path: missing, question: "anything" }, { engine });
 		assert.equal(result.path, path.join(home, missing));
-		assert.match(result.brief, /^PDF failed:.*ENOENT/);
+		assert.match(result.brief, /^PDF failed: I couldn.t find this file/);
 		assert.equal(modelCalls, 0);
 		assert.deepEqual(result.pagesRead, []);
 		assert.deepEqual(result.pagesConsulted, []);
