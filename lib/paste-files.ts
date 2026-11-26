@@ -27,7 +27,7 @@ export async function pastedFilePaths(files: readonly File[], bridge: PasteBridg
 		try {
 			const known = bridge.getPathForFile?.(file) ?? "";
 			if (known) { quoteFilePath(known); paths.push(known); continue; }
-			if (!bridge.saveAttachmentPaste) { problems.push(`${name} has no file path to attach.`); continue; }
+			if (!bridge.saveAttachmentPaste) { problems.push(`${name} isn't a saved file yet. Save it to your computer, then drop it in or paste it again. (Pasting screenshots straight in comes with the next Crux installer.)`); continue; }
 			const bytes = new Uint8Array(await file.arrayBuffer());
 			const saved = await bridge.saveAttachmentPaste({ name, mime: file.type, bytes });
 			quoteFilePath(saved);
